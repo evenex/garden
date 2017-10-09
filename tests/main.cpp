@@ -1,564 +1,302 @@
-#define CATCH_CONFIG_MAIN
-#include<catch.hpp>
-#include<SDL2/SDL.h>
-#include<SDL2/SDL_render.h>
-#include<SDL2/SDL_ttf.h>
-#include<SDL2/SDL_opengl.h>
-#include<SDL2/SDL_keyboard.h>
-#include<btBulletDynamicsCommon.h>
-#include<unicode/unistr.h>
-#include<string>
-#include<variant>
-#include<thread>
-#include<chrono>
-#include<type_traits>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreorder" 
+#pragma GCC diagnostic ignored "-Wsign-compare" 
+#include<pandaFramework.h>
+#include<pandaSystem.h>
+#include<load_prc_file.h>
+#include<fontPool.h>
+#include<geomTriangles.h>
+#include<orthographicLens.h>
+#include<pnmImage.h>
+#pragma GCC diagnostic pop
+#include<texture-font.h>
 
-using std::string;
-using Glyph = uint16_t;
-using Color = SDL_Color;
-
-namespace std
+namespace app
 {
-  template<class N>
-  concept bool Integral = std::is_integral_v<N>;
-
-  template<class N>
-  concept bool Arithmetic = std::is_arithmetic_v<N>;
-}
-
-struct nat
-{
-  constexpr auto operator
-  ++() -> decltype(auto)
+  void quit(const Event*, void*)
   {
-    ++n;
-
-    return *this;
-  }
-  constexpr auto operator
-  ++(int) -> decltype(auto)
-  {
-    n++;
-
-    return *this;
-  }
-
-  constexpr auto operator
-  <(const nat& that) const -> bool
-  {
-    return n < that.n;
-  }
-
-  constexpr nat(std::Integral n)
-  : n( n )
-  {
-    assert( n >= 0 );
-  }
-  constexpr nat()
-  : n( 0 ){}
-
-  template<std::Arithmetic N>
-  constexpr operator N() const
-  {
-    assert( n < std::numeric_limits<N>::max() );
-
-    return N( n );
-  }
-
-private:
-
-  unsigned long long int n;
-};
-
-struct real
-{
-  constexpr real(auto x)
-  : x( float( x ) ){}
-
-  template<std::Arithmetic R>
-  constexpr operator R() const
-  {
-    assert( x < std::numeric_limits<R>::max() );
-
-    return R( x );
-  }
-
-private:
-
-  float x;
-};
-
-// video resolution operators
-constexpr auto operator ""_p(unsigned long long int n_scanlines) -> std::array<nat, 2>
-{
-  if( n_scanlines == 480 )
-    return { 640, 480 };
-  else if( n_scanlines == 720 )
-    return { 1280, 720 };
-  else if( n_scanlines == 1080 )
-    return { 1920, 1080 };
-  else
-    assert( false );
-}
-constexpr auto operator ""_K(unsigned long long int kilocolumns) -> std::array<nat, 2>
-{
-  if( kilocolumns == 4 )
-    return { 3840, 2160 };
-  else if( kilocolumns == 8 )
-    return { 7680, 4320 };
-  else
-    assert( false );
-}
-
-namespace vector
-{
-  namespace operators
-  {
-    template<class N, size_t n, class M>
-    auto operator-(std::array<N, n> a, std::array<M, n> b) -> std::array<N, n>
-    {
-      std::array<N, n> c;
-
-      for( nat i = 0; i < n; ++i )
-        c[i] = N( a[i] - b[i] );
-
-      return c;
-    }
-    template<class N, size_t n, class M>
-    auto operator+=(std::array<N, n>& a, std::array<M, n> b) -> std::array<N, n>&
-    {
-      for( nat i = 0; i < n; ++i )
-        a[i] += b[i];
-
-      return a;
-    }
-    template<class N, size_t n, class M> 
-    auto operator*=(std::array<N, n>& a, M b) -> std::array<N, n>&
-    {
-      for( nat i = 0; i < n; ++i )
-        a[i] *= b;
-
-      return a;
-    }
-    template<class N, size_t n, class M> 
-    auto operator/=(std::array<N, n>& a, M b) -> std::array<N, n>&
-    {
-      for( nat i = 0; i < n; ++i )
-        a[i] /= b;
-
-      return a;
-    }
-    template<class N, size_t n, class M> 
-    auto operator/(std::array<N, n> a, M b) -> std::array<N, n>
-    {
-      std::array<N, n> c = a;
-
-      return c /= b;
-    }
-    template<class N, size_t n, class M>
-    auto operator*(std::array<N, n> a, M b) -> std::array<N, n>
-    {
-      std::array<N, n> c = a;
-
-      return c *= b;
-    }
-  }
-
-  template<class N, size_t n>
-  auto norm(std::array<N,n> v) -> N
-  {
-    auto x = N(0);
-
-    for( size_t i = 0; i < n; ++i )
-      x += v[i]*v[i];
-
-    return N( std::sqrt( x ) );
-  }
-  template<class N, size_t n>
-  auto normalize(std::array<N,n> v) -> std::array<N,n>
-  {
-    return v / norm( v );
+    exit(0);
   }
 }
 
-using namespace vector::operators;
-
-namespace graphics
+namespace ftgl
 {
-  namespace sdl
+  struct TextureAtlas
+  : std::shared_ptr<texture_atlas_t>
   {
-    void check(int status)
+    auto operator->() -> texture_atlas_t*
     {
-      constexpr int sdl_success = 0;
-
-      if( status != sdl_success )
-      {
-        throw std::runtime_error(
-          string( "SDL: " )
-          + string( SDL_GetError() )
-        );
-      }
-    };
-  }
-
-  struct Context
-  {
-    Context(std::array<nat, 2> resolution)
-    {
-      uint32_t window_flags = 0x0;
-
-      auto[ width, height ] = resolution;
-
-      sdl::check(
-        SDL_Init( SDL_INIT_VIDEO )
-      );
-
-      sdl::check(
-        SDL_CreateWindowAndRenderer(
-          width, height, window_flags,
-          &window, &renderer
-        )
-      );
-
-      TTF_Init();
+      return *this;
     }
-    ~Context()
+
+    TextureAtlas(
+      const size_t width,
+      const size_t height,
+      const size_t depth
+    )
+    : std::shared_ptr<texture_atlas_t>(
+      texture_atlas_new( width, height, depth ),
+      &texture_atlas_delete
+    ){}
+
+    operator texture_atlas_t*()
     {
-      TTF_Quit();
-
-      SDL_DestroyWindow( window );
-      SDL_DestroyRenderer( renderer );
+      return std::shared_ptr<texture_atlas_t>
+      ::get();
     }
-    Context(const Context&) = delete;
-
-    SDL_Window* window;
-    SDL_Renderer* renderer;
   };
-  void clear(Context& gfx)
+  struct TextureFont
+  : std::shared_ptr<texture_font_t>
   {
-    SDL_RenderClear( gfx.renderer );
-  };
-  void update(Context& gfx)
-  {
-    SDL_RenderPresent( gfx.renderer );
-  }
-
-  struct Font
-  {
-    Font(string path, nat size = 96)
+    auto get_glyph(const char* codepoint)
     {
-      resource = TTF_OpenFont(
-        path.c_str(), size 
+      return texture_font_get_glyph(
+        static_cast<texture_font_t*>( *this ),
+        codepoint
       );
     }
-    ~Font()
+    -> texture_glyph_t*
+    auto find_glyph(const char* codepoint)
+    -> texture_glyph_t*
     {
-      if( resource != nullptr )
-        TTF_CloseFont( resource );
-    }
-    Font(const Font&) = delete;
-
-    TTF_Font* resource = nullptr;
-  };
-  struct Icon
-  {
-    Icon(Glyph c, Color fg, Font& font, Context& gfx)
-    {
-      texture = decltype(texture)(
-        [&]()
-        {
-          auto surface = TTF_RenderGlyph_Blended(
-            font.resource, c, fg
-          );
-
-          auto tex = SDL_CreateTextureFromSurface(
-            gfx.renderer, surface
-          );
-
-          SDL_FreeSurface( surface );
-
-          return tex;
-        }
-        (),
-        &SDL_DestroyTexture
-      );
-
-      SDL_QueryTexture(
-        texture.get(), nullptr, nullptr,
-        &width, &height 
+      return texture_font_find_glyph(
+        static_cast<texture_font_t*>(
+          *this 
+        ),
+        codepoint
       );
     }
 
-    std::shared_ptr<SDL_Texture> texture;
-    int width, height;
-  };
-
-  void draw(Icon& icon, std::array<float, 2> pos, Context& gfx)
-  {
-    SDL_Rect rect = { int( pos[0] ) , int( pos[1] ), icon.width, icon.height };
-    SDL_RenderCopy( gfx.renderer, icon.texture.get(), nullptr, &rect );
-  }
-}
-
-namespace physics
-{
-  struct Context
-  {
-    Context()
+    auto operator->() -> texture_font_t*
     {
-      collision_config = new btDefaultCollisionConfiguration();
-      collision_dispatch = new btCollisionDispatcher(
-        collision_config 
-      );
-      overlapping_pair_cache = new btDbvtBroadphase();
-      constraint_solver = new btSequentialImpulseConstraintSolver();
-
-      dynamics_world = new btDiscreteDynamicsWorld(
-        collision_dispatch,
-        overlapping_pair_cache,
-        constraint_solver,
-        collision_config
-      );
-
-      dynamics_world->setGravity(
-        btVector3( 0, 0, 0 ) 
-      );
+      return *this;
     }
-    ~Context()
-    {
-      delete collision_config;
-      delete collision_dispatch; 
-      delete overlapping_pair_cache;
-      delete constraint_solver;
-      delete dynamics_world;
-    }
-    Context(const Context&) = delete;
 
-    btDefaultCollisionConfiguration* collision_config;
-    btCollisionDispatcher* collision_dispatch; 
-    btDbvtBroadphase* overlapping_pair_cache;
-    btSequentialImpulseConstraintSolver* constraint_solver;
-    btDiscreteDynamicsWorld* dynamics_world;
-  };
-  void step(real dt, Context& phy)
-  {
-    constexpr auto max_substeps = 10;
-
-    phy.dynamics_world->stepSimulation( dt, max_substeps );
-  }
-
-  struct Box
-  {
-    Box(std::array<size_t, 2> size, std::array<float, 2> pos, Context& phy)
-    : phy( phy )
-    {
-      shape = new btBoxShape(
-        btVector3(
-          real( std::get<0>( size ) ),
-          real( std::get<1>( size ) ),
-          1
-        ) 
-      );
-
-      motion = new btDefaultMotionState();
-
-      body = new btRigidBody(
-        1, motion, 
-        dynamic_cast<btCollisionShape*>(
-          shape 
-        ) 
-      );
-
-      auto tf = btTransform::getIdentity();
-
-      tf.setOrigin( btVector3(
-        std::get<0>( pos ), 
-        std::get<1>( pos ), 
-        0
-      ) );
-
-      body->setCenterOfMassTransform( tf );
-
-      phy.dynamics_world->addRigidBody( body );
-    }
-    ~Box()
-    {
-      phy.dynamics_world->removeRigidBody( body );
-
-      delete body;
-      delete shape;
-      delete motion;
-    }
-    Box(const Box&) = delete;
-
-    btRigidBody* body;
-    btBoxShape* shape;
-    btMotionState* motion;
-    Context& phy;
-  };
-  auto position(Box& box) -> std::array<float, 2> 
-  {
-    auto p = box.body->getCenterOfMassPosition();
-
-    return { p.getX(), p.getY() };
-  }
-  auto velocity(Box& box) -> std::array<float, 2> 
-  {
-    auto p = box.body->getLinearVelocity();
-
-    return { p.getX(), p.getY() };
-  }
-  auto dimensions(Box& box) -> std::array<size_t, 2> 
-  {
-    auto dim = box.shape->getHalfExtentsWithoutMargin();
-
-    return { size_t( dim.getX() ), size_t( dim.getY() ) };
-  }
-  void position(std::array<float, 2> pos, Box& box, Context& phy)
-  {
-    auto tf = btTransform::getIdentity();
-
-    tf.setOrigin( btVector3(
-      std::get<0>( pos ), 
-      std::get<1>( pos ), 
-      0
-    ) );
-
-    box.body->setCenterOfMassTransform( tf );
-  }
-  void velocity(Box& box, std::array<float, 2> vel)
-  {
-    box.body->setLinearVelocity(
-      btVector3( real( vel[0] ), real( vel[1] ), 0 )
-    );
-  }
-}
-
-namespace game
-{
-  struct Block
-  {
-    Block(graphics::Icon icon, std::array<float, 2> pos, physics::Context& phy)
-    : icon( icon )
-    , box( std::make_shared<physics::Box>(
-      std::array<size_t, 2>
-      { size_t( icon.width ), size_t( icon.height ) },
-      pos, phy
-    ) )
+    TextureFont(
+      TextureAtlas atlas,
+      const float pt_size,
+      std::string filename
+    )
+    : std::shared_ptr<texture_font_t>(
+      texture_font_new_from_file(
+        static_cast<texture_atlas_t*>(
+          atlas
+        ),
+        pt_size,
+        filename.c_str()
+      ),
+      &texture_font_delete
+    )
+    , atlas( atlas )
     {}
 
-    graphics::Icon icon;
-    std::shared_ptr<physics::Box> box;
+    operator texture_font_t*()
+    {
+      return std::shared_ptr<texture_font_t>
+      ::get();
+    }
+
+  private:
+
+    TextureAtlas atlas;
   };
 }
 
-namespace graphics
+namespace//p3d
 {
-  void draw(game::Block& block, Context& gfx)
+  template<
+    class PandaObj,
+    class... Xs
+  >
+  auto p3d_new(Xs... xs) 
+  -> PointerTo<PandaObj>
   {
-    graphics::draw(
-      block.icon,
-      physics::position( *block.box )
-      - ( physics::dimensions( *block.box ) / 2 ),
-      gfx 
-    );
+    return new PandaObj( xs... );
   }
-}
 
-TEST_CASE( "hello" )
-{
-  graphics::Context gfx{ 720_p };
-  physics::Context phy;
+  struct TextureFont
+  {
+    auto get_glyph(const char* codepoint)
+    -> texture_glyph_t*
+    {
+      if( auto glyph = font
+        .find_glyph( codepoint );
+        glyph != nullptr
+      )
+      {
+        /* TODO
+          when glyph node created,
+          query texfont
+          texfont will load if needed
+          and set needs_reload flag;
+          on glyph node draw callback,
+          check needs_reload flag
+          of texfont, and reload if set
+        */
+      }
+    }
 
-  auto font = graphics::Font{
-    "./font/DejaVuSansMono.ttf"
+    TextureFont(
+      const size_t width,
+      const size_t height,
+      const float pt_size,
+      std::string filename
+    )
+    : font(
+      ftgl::TextureAtlas(
+        width, height, 1
+      ),
+      pt_size, filename
+    )
+    , texture( new Texture() )
+    {
+      auto image = PNMImage(
+        width, height, 1
+      );
+
+      image.fill_val( 255 );
+      image.add_alpha();
+
+      auto src = font->atlas->data;
+      auto tgt = image.get_alpha_array();
+
+      std::copy(
+        src, src + ( height * width ),
+        tgt
+      );
+
+      texture->load( image );
+    }
+
+    ftgl::TextureFont font;
+    PointerTo<Texture> texture;
+    bool needs_reload = true;
   };
-  auto blocks = std::vector<game::Block>{
-    game::Block{
-      graphics::Icon{
-        0x2622,
-        { 255, 255, 0, 255 },
-        font, gfx 
-      },
-      { 100, 100 },
-      phy
-    },
-    game::Block{
-      graphics::Icon{
-        0x2624,
-        { 255, 0, 255, 255 },
-        font, gfx 
-      },
-      { 100, 200 },
-      phy
+
+  struct GlyphNode : GeomNode
+  {
+    void set_color(
+      float r, float b, float g, float a
+    )
+    {
+      NodePath( this )
+      .set_color_scale(
+        r, g, b, a 
+      );
+    }
+
+    GlyphNode(
+      std::string name,
+      TextureFont font,
+      const char* codepoint
+    )
+    : GeomNode( name )
+    {
+      // TODO single instance in texfont
+      auto vdata = p3d_new<
+        GeomVertexData
+      >(
+        name + "_quad",
+        GeomVertexFormat::get_v3t2(),
+        Geom::UH_static
+      );
+      vdata->set_num_rows( 4 );
+
+      auto vertex = GeomVertexWriter(
+        vdata, "vertex"
+      );
+      {
+        vertex.add_data3f( -0.5, 0, -0.5 );
+        vertex.add_data3f( +0.5, 0, -0.5 );
+        vertex.add_data3f( +0.5, 0, +0.5 );
+        vertex.add_data3f( -0.5, 0, +0.5 );
+      }
+
+      auto glyph = font.font
+      .get_glyph( codepoint );
+
+      auto texcoord = GeomVertexWriter(
+        vdata, "texcoord"
+      );
+      {
+        texcoord.add_data2f( 
+          glyph->s0, glyph->t0
+        );
+        texcoord.add_data2f( 
+          glyph->s1, glyph->t0
+        );
+        texcoord.add_data2f( 
+          glyph->s1, glyph->t1
+        );
+        texcoord.add_data2f( 
+          glyph->s0, glyph->t1
+        );
+      }
+
+      auto prim = p3d_new<GeomTriangles>(
+        Geom::UH_static
+      );
+      prim->add_vertices( 0, 1, 2 );
+      prim->add_vertices( 0, 2, 3 );
+
+      auto geom = p3d_new<Geom>(
+        vdata
+      );
+      geom->add_primitive( prim );
+
+      GeomNode::add_geom( geom );
+
+      NodePath( this )
+      .set_texture( font.texture );
     }
   };
+}
 
-  auto& pc = blocks[0];
-
-  using namespace std::literals::chrono_literals;
-
-  auto keyboard = std::set<int>{};
-
-  physics::velocity(
-    *pc.box, { 10, 10 }
+int main(int argc, char** argv)
+{
+  auto framework = PandaFramework{};
+  framework.open_framework(
+    argc, argv 
   );
 
-  auto loop = [&]()
-  {
-    auto start = std::chrono::system_clock::now();
+  framework.set_window_title(
+    "hello" 
+  );
+  auto& window = *framework
+  .open_window();
 
-    physics::step( 1.f/30, phy );
+  // a
+  auto font = TextureFont(
+    1024, 1024,
+    48,
+    "./font/DejaVuSansMono.ttf"
+  );
+  /* TODO
+    to make this dynamic...
+    retain all data (cpu and gpu)
+    fetch texcoords on draw
+    if glyph not found, rebuild texture
+  */
+  //font.get_glyph( "☢" );
+  //font.get_glyph( "☣" );
 
-    for( SDL_Event event; SDL_PollEvent( &event ); )
-    {
-      if( event.type == SDL_KEYDOWN )
-      {
-        if( not event.key.repeat )
-          keyboard.insert( event.key.keysym.scancode );
-      }
-      else if( event.type == SDL_KEYUP )
-      {
-        keyboard.erase( event.key.keysym.scancode );
-      }
-    }
+  auto glyph_node = p3d_new<
+    GlyphNode
+  >( "glyphnode", font, "≢" );
 
-    {
-      constexpr auto speed = 250;
+  // kb
+  window.enable_keyboard();
+  framework.define_key(
+    "escape", "", &app::quit, nullptr 
+  );
 
-      auto wasd = std::array<int, 4>
-      { SDL_SCANCODE_W, SDL_SCANCODE_A, SDL_SCANCODE_S, SDL_SCANCODE_D };
+  // TODO ortho lens, disable depth?
+  auto camera = window
+  .get_camera_group();
+  //camera.set_pos( gpath, 0, -1, 0 );
 
-      using V = std::array<float, 2>;
-      V vel = { 0,0 };
+  framework.main_loop();
+  framework.close_framework();
 
-      auto move = std::array<V, 4>
-      { V{ 0, -1 }, V{ -1, 0 }, V{ 0, +1 }, V{ +1, 0 } };
-
-      for( nat i = 0; i < wasd.size(); ++i )
-        if( keyboard.count( wasd[i] ) )
-          vel += move[i];
-
-      if( auto mag = vector::norm( vel );
-        mag != 0
-      )
-        vel /= sqrt( mag );
-
-      vel *= speed;
-
-      physics::velocity( *pc.box, vel );
-    }
-
-    graphics::clear( gfx );
-
-    for( auto& block : blocks )
-      graphics::draw( block, gfx );
-
-    graphics::update( gfx );
-
-    std::this_thread::sleep_until( start + 30ms );
-  };
-
-  while( not keyboard.count( SDL_SCANCODE_ESCAPE ) )
-    loop();
+  return EXIT_SUCCESS;
 }

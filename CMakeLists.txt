@@ -15,17 +15,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
 ################
 # DEPENDENCIES
 ################
-find_package(ICU COMPONENTS uc i18n REQUIRED)
-find_package(SDL2 COMPONENTS ttf REQUIRED)
-find_package(Bullet REQUIRED)
 # INCLUDES
 include_directories(
   include
-  ${ICU_INCLUDE_DIRS}
-  ${SDL2_INCLUDE_DIRS}
-  ${BULLET_INCLUDE_DIRS}
   ./submodule/Catch/include
   ./submodule/dlib
+  ./submodule/panda3d/built/include
+  ./submodule/freetype-gl/
+  /usr/include/python2.7
 )
 #---------------
 
@@ -33,6 +30,7 @@ include_directories(
 # COMPILER
 ################
 # SETTINGS
+set(CXX_14 "-std=c++14")
 set(CXX_17 "-std=c++17 -fconcepts")
 set(WARNINGS "-Wall \
   -Wreturn-type \
@@ -51,19 +49,26 @@ set(VISIBILITY "-fvisibility")
 set(OPENMP "-fopenmp")
 ################
 # COMMAND
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_DEBUG_FLAGS} ${CXX_17} ${WARNINGS} ${ICU_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_DEBUG_FLAGS} ${CXX_17} ${WARNINGS}")
 #---------------
 
 ################
 # LINKER
 ################
 link_directories(
+  ./submodule/panda3d/built/lib
+  ./submodule/freetype-gl/build/
 )
 SET(LIBRARIES 
-  ${ICU_LIBRARIES} 
-  ${SDL2_LIBRARIES} 
-  SDL2_ttf
-  ${BULLET_LIBRARIES} 
+  panda
+  pandaexpress
+  p3framework
+  p3dtool
+  p3dtoolconfig
+  python2.7
+  pthread
+  freetype
+  freetype-gl
 )
 #---------------
 
