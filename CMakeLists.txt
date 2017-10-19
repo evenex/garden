@@ -21,8 +21,10 @@ include_directories(
   ./submodule/Catch/include
   ./submodule/dlib
   ./submodule/panda3d/built/include
-  ./submodule/freetype-gl/
+  ./submodule/portaudio/include
+  ./submodule/liquid-dsp/include
   /usr/include/python2.7
+  /usr/include/freetype2
 )
 #---------------
 
@@ -57,7 +59,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_DEBUG_FLAGS} ${CXX_17} ${WARNINGS}")
 ################
 link_directories(
   ./submodule/panda3d/built/lib
-  ./submodule/freetype-gl/build/
+  ./submodule/portaudio/built
+  ./submodule/liquid-dsp
 )
 SET(LIBRARIES 
   panda
@@ -68,7 +71,8 @@ SET(LIBRARIES
   python2.7
   pthread
   freetype
-  freetype-gl
+  portaudio
+  liquid
 )
 #---------------
 

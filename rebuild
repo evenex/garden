@@ -1,0 +1,8 @@
+rm ./bin/tests;
+cd build;
+cmake ..;
+make -j4 2>../logs/error.log;
+cd ..;
+if [ -e ./bin/tests ];
+then ./bin/tests 2>./logs/run.log;
+fi;

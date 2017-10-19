@@ -1,6 +1,6 @@
+[submodule "submodule/portaudio"]
+	path = submodule/portaudio
+	url = git://git.assembla.com/portaudio.git
 [submodule "submodule/panda3d"]
 	path = submodule/panda3d
 	url = https://github.com/panda3d/panda3d
-[submodule "submodule/freetype-gl"]
-	path = submodule/freetype-gl
-	url = https://github.com/rougier/freetype-gl
