@@ -504,6 +504,42 @@ namespace dsp
     const uint32_t n;
   };
 
+  auto fft(Contiguous signal) -> std::vector<float>
+  {
+    auto spectrum = std::vector<float>( signal.size );
+
+    auto plan = fft_create_plan_r2r_1d(
+      signal.size, signal.ptr,
+      spectrum.data(),
+      LIQUID_FFT_REDFT10,
+      0x0
+    );
+
+    fft_execute( plan );
+
+    fft_destroy_plan( plan );
+
+    return spectrum;
+  }
+
+  auto inv_fft(std::vector<float> spectrum) -> std::vector<float>
+  {
+    auto signal = std::vector<float>( spectrum.size() );
+
+    auto plan = fft_create_plan_r2r_1d(
+      spectrum.size(), spectrum.data(),
+      signal.data(),
+      LIQUID_FFT_REDFT01,
+      0x0
+    );
+
+    fft_execute( plan );
+
+    fft_destroy_plan( plan );
+
+    return signal;
+  }
+
   auto power_spectrum(Contiguous range) -> Range
   {
     using R = float;
@@ -946,14 +982,9 @@ namespace dspdev
     float volume;
     std::map<std::string, PT(PlotNode)> plots;
 
-    // TODO do correct fft/inv
     void audio_frame(const float* in, float* out, size_t n)
     {
       buffer.write( in, n );
-
-      auto temp = dsp::power_spectrum(
-        slice( buffer.read(), buffer.size() )
-      );
 
       output.write( in, n );
 
@@ -971,48 +1002,8 @@ namespace dspdev
       auto raw = slice( buffer.read(), buffer.size() );
       auto post = slice( output.read(), output.size() );
 
-      auto fft = std::vector<float>( window.size(), 0 );
-      {
-        auto ws = slice( window.data(), window.size() );
-
-        int n = 0;
-
-        for( auto xs : chunks( window.size(), raw ) )
-        {
-          n++;
-
-          auto filt0 = std::vector<float>();
-          filt0.reserve( window.size() );
-
-          for( auto[ w, x ] : zip( ws, xs ) )
-            filt0.push_back( w*x );
-
-          auto fft0 = dsp::power_spectrum( 
-            slice( filt0.data(), filt0.size() )
-          );
-
-          int i = 0;
-          for( auto a : fft0 )
-          {
-            fft[i++] += a;
-          }
-        }
-
-        for( auto& a : fft )
-        {
-          a /= n;
-        }
-      }
-
-      auto ffts = slice( fft.data(), fft.size() );
-      auto fftraw = dsp::power_spectrum( raw );
-
-      for( size_t i = 0; i < fftraw.size; ++i )
-      {
-        fftraw.ptr[i] /= fftraw.size;
-      }
-//       auto ac = dsp::autocorrelation( raw );
- //     auto ac_fft = dsp::power_spectrum( ac );
+      auto fftraw = dsp::fft( raw );
+      //auto ffts = slice( fftraw.data(), fftraw.size() );
 
       auto plot = [&](string name, Contiguous& buffer)
       {
@@ -1022,9 +1013,7 @@ namespace dspdev
       };
 
       plot( "raw", raw );
-      plot( "post", post );
-      //plot( "ac", ac );
-      //plot( "ac_fft", ac_fft );
+      //plot( "post", ffts );
 
       return AsyncTask::DS_cont;
     };

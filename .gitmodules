@@ -10,9 +10,6 @@
 [submodule "submodule/dlib"]
 	path = submodule/dlib
 	url = https://github.com/davisking/dlib
-[submodule "submodule/liquid-dsp"]
-	path = submodule/liquid-dsp
-	url = https://github.com/jgaeddert/liquid-dsp
 [submodule "submodule/bullet3"]
 	path = submodule/bullet3
 	url = https://github.com/bulletphysics/bullet3
