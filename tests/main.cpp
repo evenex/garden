@@ -1,3 +1,4 @@
+#if 0
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wreorder" 
 #pragma GCC diagnostic ignored "-Wsign-compare" 
@@ -25,112 +26,8 @@
 #include<functional>
 // dlib
 #include<dlib/unicode/unicode.h>
-
-
-#include<any>
-namespace garden
-{
-  #define CHECK_TYPE(X) using TERMINATE_COMPILATION = decltype(X)::TYPE_CHECK;
-
-  using std::declval;
-
-  template<class X>
-  auto fwd(X&& x) -> decltype(auto)
-  {
-    return std::forward<X>( x );
-  }
-
-  template<class...>
-  struct Arg;
-
-  template<>
-  struct Arg<>{};
-
-  constexpr auto _ = Arg<>{};
-
-  template<class F>
-  struct function
-  {
-    auto operator()(auto... xs) const-> decltype(auto)
-    {
-      return fn.eval( fwd( xs )... );
-    }
-
-    F fn;
-  };
-
-  struct Identity
-  {
-    constexpr static 
-    auto eval(auto&& x) -> decltype(auto)
-    {
-      return fwd( x );
-    }
-  };
-  constexpr static auto identity = function<Identity>{};
-
-  /////////////
-
-  class Typeclass{};
-
-  template<class Typeclass, class Type>
-  struct instance;
-
-  template<class Type, class Typeclass>
-  using proof = typename Typeclass::template proof<Type>;
-
-  template<class Type, class Typeclass>
-  concept bool models = requires
-  { typename proof<std::decay_t<Type>, Typeclass>; };
-
-  ///////
-
-  struct Functor : Typeclass
-  {
-    template<class F>
-    requires requires
-    (F f)
-    {
-      { instance<Functor, F>
-        ::transform( identity, f )
-        } -> F;
-    }
-    struct proof {};
-
-    struct transform
-    {
-      static constexpr auto
-      eval(auto&& f, models<Functor>&& fx) -> decltype(auto)
-      {
-        return instance<Functor,
-          std::decay_t<decltype(fx)>
-        >::transform( fwd( f ), fwd( fx ) );
-      }
-    };
-  };
-  namespace functor
-  {
-    constexpr auto transform = function<Functor::transform>{};
-  }
-
-  /// 
-
-  template<class X>
-  struct instance<Functor, X*>
-  {
-    template<class F>
-    constexpr static auto
-    transform(F f, X* fx) -> auto*
-    {
-      return new std::decay_t<
-        std::result_of_t<
-          F(X)
-        >
-      >{ f( *fx ) };
-    };
-  };
-}
-
+#include<dlib/sliding_buffer.h>
+#include<dlib/matrix.h>
 namespace app
 {
   void quit(const Event*, void*)
@@ -277,128 +174,100 @@ namespace p3d
   }
 }
 
-template<class R>
-concept bool Range = requires(R r)
+// garden
+#include<garden.tcc>
+namespace garden // range
+namespace garden // dlib
 {
-  { ++r } -> R;
-  { *r } -> std::any;
-  { r != nullptr } -> bool;
-};
-auto begin(Range& x) -> auto
-{
-  return x;
-}
-auto end(Range&) -> nullptr_t
-{
-  return {};
-}
-
-template<class X>
-concept bool Contiguous = requires(X x)
-{
-  { &*++x.ptr };
-  { x.size } -> size_t;
-};
-template<class X>
-auto slice(X* ptr, size_t size) -> Contiguous
-{
-  struct
+  namespace range
   {
-    auto operator*() -> X&
+    struct ToMatrix
     {
-      return *ptr;
-    }
-    auto operator++() -> auto&
-    {
-      ++ptr;
-      --size;
+      template<class R>
+      requires Range<R, with< known_size >>
+      static constexpr auto
+      eval(R r)
+      {
+        using N =std::decay_t<item_t<R>>; 
 
-      return *this;
-    }
-    auto operator!=(nullptr_t) const -> bool
-    {
-      return size > 0;
-    }
+        auto m = dlib::matrix<N, 1, 0>(
+          r.size()
+        );
 
-    X* ptr; size_t size; 
+        for( auto[ i, x ]
+          : enumerate( r )
+        )
+          m( i ) = x;
+
+        return m;
+      }
+    };
+    static constexpr auto
+    to_matrix = func<ToMatrix>{};
   }
-  ans;
-
-  ans.ptr = ptr;
-  ans.size = size;
-
-  return ans;
 }
-auto chunks(size_t n, Contiguous range) -> Range
+namespace garden // math
 {
-  struct
+  struct AbsVal
   {
-    auto operator*() -> auto
+    static constexpr auto
+    eval(auto x) -> auto
     {
-      return slice( r.ptr, n );
+      return std::abs( x );
     }
-    auto operator++() -> auto&
-    {
-      auto dx = min( r.size, n );
+  };
+  static constexpr auto
+  absval = func<AbsVal>{};
 
-      while( dx --> 0 )
-        ++r;
-
-      return *this;
-    }
-    auto operator!=(nullptr_t) const -> bool
-    {
-      return r != nullptr;
-    }
-
-    decltype(range) r;
-    size_t n;
-  }
-  ans;
-
-  ans.r = range;
-  ans.n = n;
-
-  return ans;
-}
-auto zip(Range xs, Range ys) -> auto
-{
-  struct
+  struct Multiply
   {
-    auto operator*() -> auto
+    static constexpr auto 
+    eval(auto a, auto b) -> auto
     {
-      return std::tuple( *x, *y );
+      return a*b;
     }
-    auto operator++() -> auto&
+  };
+  static constexpr auto
+  multiply = func<Multiply>{};
+
+  struct Mean
+  {
+    template<Range R>
+    static constexpr auto
+    eval(R r) -> range::item_t<R>
     {
-      ++x;
-      ++y;
+      auto a = range::item_t<R>( 0 );
+      auto n = size_t( 0 );
 
-      return *this;
+      for( auto x : r )
+      {
+        a += x;
+        ++n;
+      }
+
+      return a / n;
     }
-    auto operator!=(nullptr_t) -> bool
-    {
-      return x != nullptr and y != nullptr;
-    }
-
-    decltype(xs) x;
-    decltype(ys) y;
-  }
-  ans;
-
-  ans.x = xs;
-  ans.y = ys;
-
-  return ans;
+  };
+  static constexpr auto
+  mean = func<Mean>{};
 }
-auto save(Range xs) -> std::vector<auto>
+namespace garden // print
 {
-  auto ys = std::vector<std::decay_t<decltype(*xs)>>();
-
-  for( auto x : xs )
-    ys.push_back( x );
-
-  return ys;
+  struct PrintLn
+  {
+    static void
+    eval(auto x)
+    {
+      std::cout << x << std::endl;
+    }
+    static void
+    eval()
+    {
+      std::cout << std::endl;
+    }
+  };
+  static constexpr auto
+  println = func<PrintLn>{};
 }
 
 template<class A, class B>
@@ -409,7 +278,7 @@ auto operator<<(std::ostream& out, std::tuple<A,B> xs) -> std::ostream&
   << std::get<1>( xs )
   << ")";
 }
-template<Range R>
+template<garden::Range R>
 requires not std::is_convertible_v<R, const char*>
 auto operator<<(std::ostream& out, R r) -> std::ostream&
 {
@@ -431,302 +300,73 @@ auto operator<<(std::ostream& out, R r) -> std::ostream&
 #include<complex>
 namespace dsp
 {
-  #include<liquid.h>
+  using namespace garden;
 
-  struct Buffer
+  struct Buffer : dlib::circular_buffer<std::complex<float>>
   {
-    void print()
+    Buffer(size_t n)
     {
-      windowf_print( ptr.get() );
-    }
-    void debug_print()
-    {
-      windowf_debug_print( ptr.get() );
-    }
-    void reset()
-    {
-      windowf_reset( ptr.get() );
+      resize( n );
     }
 
-    auto size() -> uint32_t
+    auto begin() -> Range
     {
-      return n;
-    }
-    void resize(uint32_t n)
-    {
-      windowf_recreate( ptr.get(), n );
-    }
-    void clear()
-    {
-      windowf_reset( ptr.get() );
-    }
-
-    auto operator[](uint32_t i) -> float
-    {
-      float x;
-
-      windowf_index( ptr.get(), i, &x );
-
-      return x;
-    }
-    void push(float x)
-    {
-      windowf_push( ptr.get(), x );
-    }
-
-    auto read() -> float*
-    {
-      float* xs;
-
-      windowf_read( ptr.get(), &xs );
-
-      return xs;
-    }
-    void write(const float* xs, uint32_t n)
-    {
-      windowf_write(
-        ptr.get(), const_cast<float*>( xs ), n 
+      return range::transform(
+        [this](auto i)
+        { return operator[]( i ); },
+        range::iota( this->size() )
       );
     }
-
-    Buffer(uint32_t n)
-    : n( n )
+    auto end() -> nullptr_t
     {
-      ptr = decltype(ptr)(
-        windowf_create( n ),
-        windowf_destroy
-      );
+      return {};
     }
-
-  private:
-
-    std::shared_ptr<windowf_s> ptr;
-    const uint32_t n;
   };
 
-  auto fft(Contiguous signal) -> std::vector<float>
+  auto hamming_window(size_t n) -> Range
   {
-    auto spectrum = std::vector<float>( signal.size );
+    using namespace garden;
 
-    auto plan = fft_create_plan_r2r_1d(
-      signal.size, signal.ptr,
-      spectrum.data(),
-      LIQUID_FFT_REDFT10,
-      0x0
+    constexpr auto a = 0.54f;
+    constexpr auto b = 1 - a;
+
+    return range::transform(
+      [=](auto i)
+      {
+        return a - b * std::cos( 
+          ( 2 * 3.14f * i )
+          / ( n - 1 )
+        );
+      },
+      range::iota( n )
     );
-
-    fft_execute( plan );
-
-    fft_destroy_plan( plan );
-
-    return spectrum;
   }
 
-  auto inv_fft(std::vector<float> spectrum) -> std::vector<float>
+  struct FastFourier
   {
-    auto signal = std::vector<float>( spectrum.size() );
-
-    auto plan = fft_create_plan_r2r_1d(
-      spectrum.size(), spectrum.data(),
-      signal.data(),
-      LIQUID_FFT_REDFT01,
-      0x0
-    );
-
-    fft_execute( plan );
-
-    fft_destroy_plan( plan );
-
-    return signal;
-  }
-
-  auto power_spectrum(Contiguous range) -> Range
-  {
-    using R = float;
-    using C = std::complex<R>;
-
-    auto in_time = std::vector<C>( range.size );
-    auto in_freq = std::vector<C>( range.size );
-
-    std::transform(
-      range.ptr, range.ptr + range.size,
-      in_time.data(),
-      [](R re){ return C( re ); }
-    );
-
-    // create fft plans
-    fftplan forward = fft_create_plan(
-      range.size, 
-      in_time.data(), in_freq.data(),
-      LIQUID_FFT_FORWARD, 0
-    );
-
-    // execute fft plans
-    fft_execute( forward );
-
-    // destroy fft plans
-    fft_destroy_plan( forward );
-
-    struct
+    static constexpr auto
+    eval(Range r) -> Range
     {
-      R* ptr; size_t size;
-      std::shared_ptr<std::vector<R>> m;
-
-      auto begin() -> auto&
-      {
-        return *this;
-      }
-      auto end() -> nullptr_t
-      {
-        return {};
-      }
-
-      auto operator*() -> float&
-      {
-        return *ptr;
-      }
-      auto operator++() -> auto&
-      {
-        ++ptr;
-        --size;
-
-        return *this;
-      }
-      auto operator!=(nullptr_t) const -> bool
-      {
-        return size > 0;
-      }
-
-      operator std::vector<R>() const
-      {
-        return *m;
-      }
+      return range::over( dlib::fft(
+        r^range::to_matrix 
+      ) );
     }
-    ans;
 
-    ans.m = std::make_shared<std::vector<R>>(
-      range.size
-    );
-    ans.ptr = ans.m->data();
-    ans.size = ans.m->size();
-
-    std::transform(
-      in_freq.begin(), in_freq.end(),
-      ans.ptr, [](C c)
-      { return std::abs( c ); }
-    );
-
-    return ans;
-  }
-
-  auto reconstructed_from_spectrum(Contiguous range) -> Range
-  {
-    using R = float;
-    using C = std::complex<R>;
-
-    auto in_time = std::vector<C>( range.size );
-    auto in_freq = std::vector<C>( range.size );
-
-    std::transform(
-      range.ptr, range.ptr + range.size,
-      in_time.data(),
-      [](R re){ return C( re ); }
-    );
-
-    // create fft plans
-    fftplan forward = fft_create_plan(
-      range.size, 
-      in_time.data(), in_freq.data(),
-      LIQUID_FFT_BACKWARD, 0
-    );
-
-    // execute fft plans
-    fft_execute( forward );
-
-    // destroy fft plans
-    fft_destroy_plan( forward );
-
-    struct
+    struct Inverse
     {
-      R* ptr; size_t size;
-      std::shared_ptr<std::vector<R>> m;
-
-      auto begin() -> auto&
+      static constexpr auto
+      eval(Range r) -> Range
       {
-        return *this;
+        return range::over( dlib::ifft(
+          r^range::to_matrix 
+        ) );
       }
-      auto end() -> nullptr_t
-      {
-        return {};
-      }
-
-      auto operator*() -> float&
-      {
-        return *ptr;
-      }
-      auto operator++() -> auto&
-      {
-        ++ptr;
-        --size;
-
-        return *this;
-      }
-      auto operator!=(nullptr_t) const -> bool
-      {
-        return size > 0;
-      }
-
-      operator std::vector<R>() const
-      {
-        return *m;
-      }
-    }
-    ans;
-
-    ans.m = std::make_shared<std::vector<R>>(
-      range.size
-    );
-    ans.ptr = ans.m->data();
-    ans.size = ans.m->size();
-
-    int i = 0;
-    for( auto& x : *ans.m )
-      x = in_freq[i++].real() / 1000;
-
-    return ans;
-  }
-
-  auto autocorrelation(Contiguous range) -> Contiguous
-  {
-    struct
-    {
-      float* ptr; size_t size;
-
-      std::shared_ptr<std::vector<float>> m;
-    }
-    ans;
-
-    ans.m = std::make_shared<std::vector<float>>( range.size );
-    ans.ptr = ans.m->data();
-    ans.size = ans.m->size();
-
-    for( size_t i = 0; i < range.size; ++i )
-      ans.m->at( i ) = dsp::liquid_filter_autocorr(
-        range.ptr, range.size, i 
-      );
-
-    return ans;
-  }
-
-  auto hamming_window(size_t n) -> std::vector<float>
-  {
-    auto w = std::vector<float>( n );
-
-    for( size_t i = 0; i < n; ++i )
-      w[i] = hamming( i, n );
-
-    return w;
-  }
+    };
+  };
+  static constexpr auto
+  fft = func<FastFourier>{};
+  static constexpr auto
+  ifft = func<FastFourier::Inverse>{};
 }
 
 namespace audio
@@ -899,6 +539,7 @@ namespace gfx
 namespace dspdev
 {
   using namespace gfx;
+  using namespace garden;
 
   struct PlotNode : PandaNode
   {
@@ -928,25 +569,6 @@ namespace dspdev
     {
       this->title = title;
     }
-    void set_data(float* xs, const size_t n)
-    {
-      auto v = GeomVertexWriter(
-        geom->vertex_data, "vertex" 
-      );
-      {
-        for( auto i = n; i --> 0; )
-          v.add_data3f(
-            float( i ) / n, 0, xs[i] 
-          );
-      }
-
-      auto p = geom->primitive_data;
-      {
-        p->clear_vertices();
-        p->add_consecutive_vertices( 0, n );
-        p->close_primitive();
-      }
-    }
     void set_x_range(float min, float max)
     {
       x_range = { min, max };
@@ -956,6 +578,28 @@ namespace dspdev
     {
       y_range = { min, max };
       rescale();
+    }
+
+    void set_data(Range xs)
+    {
+      auto n = range::size( xs );
+
+      auto v = GeomVertexWriter(
+        geom->vertex_data, "vertex" 
+      );
+      {
+        for( auto[ i, x ] : range::enumerate( xs ) )
+          v.add_data3f(
+            float( i ) / n, 0, x
+          );
+      }
+
+      auto p = geom->primitive_data;
+      {
+        p->clear_vertices();
+        p->add_consecutive_vertices( 0, n );
+        p->close_primitive();
+      }
     }
 
     void rescale()
@@ -977,59 +621,83 @@ namespace dspdev
 
   struct Session
   {
-    dsp::Buffer buffer, output;
-    std::vector<float> window;
+    dsp::Buffer input;
+    std::vector<float> output;
+    std::vector<std::complex<float>> spectrum;
     float volume;
     std::map<std::string, PT(PlotNode)> plots;
 
-    void audio_frame(const float* in, float* out, size_t n)
+    void analyze_audio()
     {
-      buffer.write( in, n );
+      using namespace range;
+      using namespace dsp;
+      using range::transform; // TODO
+      using range::transpose; // TODO
+      using range::iota; // TODO
 
-      output.write( in, n );
+      auto m = 10;
+      auto n = input.size() / m;
+
+      spectrum = save(
+        transform( mean )
+        << transpose
+        << transform(
+          fft << zip_with( multiply,
+            hamming_window( n )
+          )
+        )
+        << stride( m )
+        << sliding_window( n )
+        << over
+      )( input );
+
+      output = transform( absval,
+        ifft( over( spectrum ) )
+      )^save;
+    }
+
+    void render_audio(const float* in, float* out, size_t n)
+    {
+      analyze_audio();
 
       while( n --> 0 )
       {
-        auto x = output[ output.size() - n - 1 ];
+        input.push_back( *in++ );
+
+        auto x = output[ output.size()/2 - n ];
 
         *out++ = x * volume;
         *out++ = x * volume;
       }
     };
-
-    auto video_frame() -> AsyncTask::DoneStatus
+    auto render_video() -> AsyncTask::DoneStatus
     {
-      auto raw = slice( buffer.read(), buffer.size() );
-      auto post = slice( output.read(), output.size() );
-
-      auto fftraw = dsp::fft( raw );
-      //auto ffts = slice( fftraw.data(), fftraw.size() );
-
-      auto plot = [&](string name, Contiguous& buffer)
+      auto render = [&](string name, Range buffer)
       {
-        plots[ name ]->set_data(
-          buffer.ptr, buffer.size
-        );
+        plots.at( name )->set_data( buffer );
       };
 
-      plot( "raw", raw );
-      //plot( "post", ffts );
+      using namespace range;
+      using range::transform;
+
+      render( "raw",
+        over( output )
+      );
+
+      if(1)
+      render( "fft", 
+        transform( absval, over( spectrum ) ) 
+      );
 
       return AsyncTask::DS_cont;
     };
 
     Session(int argc, char** argv)
-    : buffer( 8192 )
-    , output( 8192 )
-    , window( dsp::hamming_window( 8192 ) )
-    , volume( 16 )
+    : input( 8192 )
+    , output( input.size() )
+    , volume( 21 )
     {
       using namespace garden;
-
-      audio::open_stream();
-
-      audio::callback = [this](auto... xs)
-      { audio_frame( xs... ); };
 
       auto setup = [&](auto& framework, auto& window)
       {
@@ -1047,24 +715,24 @@ namespace dspdev
               p3d::make<PlotNode>( "", green )
             )
           );
-          p.set_pos( { -1, 0, -0.5 } );
+          p.set_pos( { -1, 0, +0.5 } );
           p.set_scale( { 2, 1, 1 } );
         }
         { // make plot
           auto p = window.get_render_2d()
           .attach_new_node(
-            plots["post"] = (
+            plots["fft"] = (
               p3d::make<PlotNode>( "", cyan )
             )
           );
-          p.set_pos( { -1, 0, 0.5 } );
-          p.set_scale( { 2, 1, 1 } );
+          p.set_pos( { -1, 0, -0.5 } );
+          p.set_scale( { 2, 1, 1e-2 } );
         }
 
         { // set per-frame callback
           app::task_callbacks
           .push_back(
-            [this](){ return video_frame(); } 
+            [this](){ return render_video(); } 
           );
 
           for( auto task : app::task_callbacks )
@@ -1081,6 +749,11 @@ namespace dspdev
 
         audio::start_stream();
       };
+
+      audio::callback = [this](auto... xs)
+      { render_audio( xs... ); };
+
+      audio::open_stream();
 
       p3d::main( argc, argv, setup );
     }
@@ -1370,6 +1043,9 @@ namespace gamedev
   };
 }
 
+#include<dlib/directed_graph.h>
+#include<queue>
+#include<set>
 namespace tests
 {
   void functor_basics()
@@ -1383,31 +1059,150 @@ namespace tests
 
     auto y = functor::transform( f, x );
 
-    std::cout << std::boolalpha
-    << models<int*, Functor>
-    << ", "
-    << *y
-    << std::endl;
+    assert( *y == 6 );
   }
 
   void range_basics()
   {
+    using namespace garden;
+
     int data[6] = { 1, 2, 3, 4, 5, 6 };
 
-    auto xs = slice( data, 6 );
+    auto xs = range::slice( data, 6 );
 
     std::cout << xs << std::endl;
 
-    for( auto chunk : chunks( 2, xs ) )
+    for( auto chunk : range::chunks( 2, xs ) )
       std::cout << chunk << std::endl;
 
-    std::cout << zip( xs, xs ) << std::endl;
+    std::cout << range::zip( xs, xs ) << std::endl;
+  }
+
+  void bfs()
+  {
+    using namespace garden;
+    using namespace garden::range;
+
+    using G = dlib::directed_graph<int>
+    ::kernel_1a;
+    using V = G::node_type;
+
+    auto breadth_first = [](auto f, G& graph)
+    {
+      if( graph.number_of_nodes() == 0 )
+        return;
+
+      auto visited = std::set<size_t>{};
+      auto frontier = std::queue<size_t>{};
+
+      auto was_visited = [&](auto i) -> bool
+      {
+        return visited.count( i ) > 0;
+      };
+      auto visit = [&](auto i) -> void
+      {
+        assert( not was_visited( i ) );
+
+        f( graph.node( i ).data );
+        visited.insert( i );
+
+        assert( was_visited( i ) );
+      };
+      auto grow_frontier = [&](auto i) -> void
+      {
+        assert( not was_visited( i ) );
+
+        frontier.push( i );
+      };
+      auto traverse_frontier = [&]() -> size_t
+      {
+        auto i = frontier.front();
+        frontier.pop();
+        return i;
+      };
+      auto children = [&](auto i) -> Range
+      {
+        struct range_t
+        {
+          auto operator*() -> size_t
+          {
+            return node.child( j ).index();
+          }
+          auto operator++() -> auto&
+          {
+            ++j;
+
+            return *this;
+          }
+          auto operator!=(nullptr_t) -> bool
+          {
+            return j < node.number_of_children();
+          }
+
+          auto begin() -> auto&
+          {
+            return *this;
+          }
+          auto end() -> nullptr_t
+          {
+            return {};
+          }
+
+          V& node;
+          size_t j;
+        };
+
+        return range_t{ graph.node( i ), 0 };
+      };
+      
+      grow_frontier( 0 );
+
+      while( not frontier.empty() )
+      {
+        auto i = traverse_frontier();
+
+        visit( i );
+
+        for( auto c : children( i ) )
+          if( not was_visited( c ) )
+            grow_frontier( c );
+      }
+    };
+
+    G g;
+
+    auto add_node = [&](auto d)
+    {
+      g.node( g.add_node() )
+      .data = d;
+    };
+
+    for( auto i : range::iota( 10 ) )
+      add_node( i );
+
+    g.add_edge( 0, 1 );
+      g.add_edge( 1, 4 );
+      g.add_edge( 1, 5 );
+    g.add_edge( 0, 2 );
+      g.add_edge( 2, 6 );
+      g.add_edge( 2, 7 );
+        g.add_edge( 7, 8 );
+        g.add_edge( 7, 9 );
+    g.add_edge( 0, 3 );
+
+    breadth_first( println, g );
   }
 }
+#endif
+#define CATCH_CONFIG_MAIN
+#include<iostream>
+#include<garden/testing.tcc>
+#include<garden/functional.tcc>
 
-int main(int argc, char** argv)
+void show(auto x)
 {
-  dspdev::Session( argc, argv );
-
-  return EXIT_SUCCESS;
+  std::cout << x << std::endl;
+}
+namespace garden
+{
 }

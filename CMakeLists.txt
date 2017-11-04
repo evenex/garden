@@ -22,7 +22,6 @@ include_directories(
   ./submodule/dlib
   ./submodule/panda3d/built/include
   ./submodule/portaudio/include
-  ./submodule/liquid-dsp/include
   /usr/include/python2.7
   /usr/include/freetype2
 )
@@ -51,7 +50,7 @@ set(VISIBILITY "-fvisibility")
 set(OPENMP "-fopenmp")
 ################
 # COMMAND
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_DEBUG_FLAGS} ${CXX_17} ${WARNINGS}")
+set(CMAKE_CXX_FLAGS "-O3 ${CXX_17} ${WARNINGS}")
 #---------------
 
 ################
@@ -60,7 +59,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_DEBUG_FLAGS} ${CXX_17} ${WARNINGS}")
 link_directories(
   ./submodule/panda3d/built/lib
   ./submodule/portaudio/built
-  ./submodule/liquid-dsp
 )
 SET(LIBRARIES 
   panda
@@ -72,7 +70,6 @@ SET(LIBRARIES
   pthread
   freetype
   portaudio
-  liquid
 )
 #---------------
 
