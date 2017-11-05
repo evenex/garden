@@ -76,4 +76,23 @@ namespace garden
 
     REQUIRE(( a == b*2 ));
   }
+  EXAMPLE( functor )
+  {
+    auto f = [](auto i){ return i*i; };
+
+    REQUIRE((
+      ( r^functor::transform( f ) )
+      == ( r^range::transform( f ) )
+    ));
+  }
+  EXAMPLE( only )
+  {
+    auto a = 0;
+    for( auto i
+      : range::only( 1, 2, 3 )
+    )
+      a += i;
+
+    REQUIRE(( a == 6 ));
+  }
 }

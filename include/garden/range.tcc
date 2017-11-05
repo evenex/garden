@@ -1,6 +1,7 @@
 #pragma once
 #include<any>
 #include<garden/functional.tcc>
+#include<garden/functor.tcc>
 namespace garden
 {
   template<class R, Property... desc>
@@ -275,4 +276,72 @@ namespace garden::range
 
   static constexpr auto
   transform = transform_fn{};
+}
+namespace garden
+{ // functor
+  template<Range R>
+  struct functor::instance<R>
+  {
+    static constexpr auto
+    transform = range::transform;
+  };
+}
+namespace garden::range
+{ // only
+  template<class X, auto n>
+  struct Only : std::array<X,n>
+  {
+    Only(auto... x)
+    : std::array<X,n>({ x... })
+    , i( 0 ){}
+
+    constexpr auto next() const -> Only
+    {
+      return { *this, i+1 };
+    }
+    constexpr auto is_empty() const -> bool
+    {
+      return i == n;
+    }
+
+    private:
+
+    Only(const Only& that, size_t i)
+    : std::array<X,n>( that )
+    , i( i ){}
+
+    size_t i;
+  };
+
+  template<class... X>
+  Only(X...) -> Only<std::common_type_t<X...>, sizeof...(X)>;
+
+  struct only_fn
+  : fn<only_fn>
+  {
+    template<class... X>
+    static constexpr auto eval
+    (X... x) -> Range
+    {
+      return Only{ x... };
+    }
+  };
+
+  static constexpr auto
+  only = only_fn{};
+}
+namespace garden
+{ // applicative
+
+  namespace applicative
+  { template<class> class instance; }
+  
+  template<Range R>
+  struct applicative::instance<R>
+  {
+    static constexpr auto
+    pure = range::only;
+    static constexpr auto
+    apply = 0;
+  };
 }
