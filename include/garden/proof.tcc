@@ -37,7 +37,4 @@ namespace garden
   template<class X, Property P>
   concept bool models = requires
   { typename proof<P, X>; };
-
-  template<Property... P>
-  struct with{};
 }

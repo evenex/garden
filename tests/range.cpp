@@ -3,34 +3,77 @@
 
 #define MODULE "range"
 
-#if 0
 namespace garden
 {
-  struct Example
-  {
-    int i = 0;
-  
-    auto front() const -> auto
-    {
-      return i;
-    }
-    auto empty() const -> auto
-    {
-      return i == 10;
-    }
-    void next()
-    {
-      ++i;
-    }
-  };
+  int x[5] = { 1, 2, 3, 4, 5 };
 
-  EXAMPLE( basics )
-  {
-    int i = 0;
-    Range x = Example{};
+  auto r = range::from_ptr( x, 5 );
 
-    for( auto n : x )
-      REQUIRE( i++ == n );
+  EXAMPLE( hi )
+  {
+    auto a = 0;
+    for( auto i : r )
+      a += i;
+
+    auto b = 0;
+    for( auto i : x )
+      b += i;
+
+    REQUIRE(( a == b ));
+  }
+  EXAMPLE( equality )
+  {
+    REQUIRE(( r == r ));
+  }
+  EXAMPLE( recurrence )
+  {
+    auto f = range::recur(
+      [](auto x){ return x+1; }
+    );
+
+    auto a = 0;
+    for( auto i : f( 6 ) )
+      if( i < 10 )
+        ++a;
+      else
+        break;
+
+     REQUIRE(( a == 4 ));
+  }
+  EXAMPLE( drop/take )
+  {
+    using namespace range;
+
+    REQUIRE(( r == ( 
+      1^(
+        range::recur(
+          [](auto i){ return i + 1; }
+        ) >> take( 5 )
+      )
+    ) ));
+
+    REQUIRE(( r == (
+      -4^(
+        range::recur(
+          [](auto i){ return i + 1; }
+        ) >> take( 10 ) >> drop( 5 )
+      )
+    ) ));
+  }
+  EXAMPLE( transform )
+  {
+    using namespace range;
+
+    auto a = 0;
+    for( auto i : 
+      r^transform( [](auto j){ return j*2; } ) 
+    )
+      a += i;
+
+    auto b = 0;
+    for( auto i : x )
+      b += i;
+
+    REQUIRE(( a == b*2 ));
   }
 }
-#endif

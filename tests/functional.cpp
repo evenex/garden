@@ -7,7 +7,7 @@ using namespace garden;
 using namespace std::literals::string_literals;
 
 struct increment_fn
-: fn<increment_fn, with<arity<1>>>
+: fn<increment_fn, arity<1>>
 {
   template<class X>
   requires 
@@ -17,7 +17,7 @@ struct increment_fn
   { return x+1; }
 };
 struct square_fn
-: fn<square_fn, with<arity<1>>>
+: fn<square_fn, arity<1>>
 {
   template<class X>
   requires
@@ -27,7 +27,7 @@ struct square_fn
   { return x*x; }
 };
 struct add_fn
-: fn<add_fn, with<arity<2>, commutativity>>
+: fn<add_fn, arity<2>, commutativity>
 {
   template<class X>
   static constexpr auto eval
@@ -35,7 +35,7 @@ struct add_fn
   { return a+b; }
 };
 struct size_of_fn
-: fn<size_of_fn, with<arity<1>>>
+: fn<size_of_fn, arity<1>>
 {
   template<class X>
   static constexpr auto eval

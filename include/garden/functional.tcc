@@ -43,7 +43,7 @@ namespace garden
 { template<class...> class fn;
 
   template<class F, class... properties>
-  struct fn<F, with<properties...>>
+  struct fn<F, properties...>
   {
     template<class... X>
     requires ( ... and models<F(X...), properties> )
@@ -117,9 +117,6 @@ namespace garden
       return { f, { x... } };
     }
   };
-
-  template<class F>
-  struct fn<F> : fn<F, with<>>{};
 }
 namespace garden
 { // function regularization
@@ -137,6 +134,16 @@ namespace garden
     {
       return f( x... );
     }
+
+    constexpr auto operator=
+    (reg_fn&& g) -> decltype(auto)
+    {
+      new(&f) F{ g.f };
+      return *this;
+    }
+
+    constexpr reg_fn(const reg_fn& g)
+    : f( g.f ){}
 
   private:
 
@@ -165,21 +172,17 @@ namespace garden
 { template<class...> class combinator_fn;
 
   template<class F, class... properties>
-  struct combinator_fn<F, with<properties...>>
-  : fn<F, with<properties...>>
+  struct combinator_fn<F, properties...>
+  : fn<F, properties...>
   {
     template<class... G>
     constexpr auto operator()
     (G... g) const -> auto
     {
-      return fn<F, with<properties...>>
+      return fn<F, properties...>
       ::operator()( functional( g )... );
     }
   };
-
-  template<class F>
-  struct combinator_fn<F>
-  : combinator_fn<F, with<>>{};
 }
 namespace garden
 { // composition
@@ -254,7 +257,6 @@ namespace garden
       return composed_fn( f... );
     }
   };
-
 }
 namespace garden
 { // adjoinment
@@ -397,7 +399,7 @@ namespace garden
 { // functional operators
   constexpr auto operator^
   (auto x, auto f) -> auto
-  { return fn{ f }( x ); }
+  { return functional( f )( x ); }
   constexpr auto operator<<
   (auto f, auto g) -> auto
   { return compose( f, g ); }
@@ -438,6 +440,22 @@ namespace garden
       if( y != f.eval( b,a ) )
         throw property::failed<commutativity>
         { __PRETTY_FUNCTION__ };
+    }
+  };
+}
+namespace garden
+{ template<class...> class lifted_fn;
+
+  template<class F, class... properties>
+  struct lifted_fn<F, properties...>
+  : fn<F, properties...>
+  {
+    template<class G, class... X>
+    constexpr auto operator()
+    (G g, X... x) const -> auto
+    {
+      return fn<F, properties...>
+      ::operator()( functional( g ), x... );
     }
   };
 }
