@@ -1195,14 +1195,4 @@ namespace tests
 }
 #endif
 #define CATCH_CONFIG_MAIN
-#include<iostream>
 #include<garden/testing.tcc>
-#include<garden/functional.tcc>
-
-void show(auto x)
-{
-  std::cout << x << std::endl;
-}
-namespace garden
-{
-}

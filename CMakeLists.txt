@@ -79,19 +79,20 @@ SET(LIBRARIES
 file(GLOB TEST_SRC
   "tests/*.cpp"
 )
-file(GLOB MAIN_SRC
-  "src/*.cpp"
-)
 add_executable(tests
   ${TEST_SRC}
-)
-add_library(${CMAKE_PROJECT_NAME}
-  ${MAIN_SRC}
 )
 target_link_libraries(tests 
   ${LIBRARIES} 
 )
-target_link_libraries(${CMAKE_PROJECT_NAME}
+
+file(GLOB MAIN_SRC
+  "src/*.cpp"
+)
+add_executable(main
+  ${MAIN_SRC}
+)
+target_link_libraries(main
   ${LIBRARIES} 
 )
 #---------------
@@ -99,13 +100,13 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 ################
 # INSTALL
 ################
-install(DIRECTORY 
-  include/${CMAKE_PROJECT_NAME}
-  DESTINATION include
-)
-install(TARGETS  ${CMAKE_PROJECT_NAME}
-  RUNTIME DESTINATION bin
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-)
+#install(DIRECTORY 
+#  include/${CMAKE_PROJECT_NAME}
+#  DESTINATION include
+#)
+#install(TARGETS  ${CMAKE_PROJECT_NAME}
+#  RUNTIME DESTINATION bin
+#  LIBRARY DESTINATION lib
+#  ARCHIVE DESTINATION lib
+#)
 #---------------

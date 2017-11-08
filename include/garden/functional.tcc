@@ -5,7 +5,7 @@
 #include<garden/proof.tcc>
 
 namespace garden
-{
+{ // typelist utils
   template<auto i, class... X>
   requires i < sizeof...(X)
   using ith_t = std::tuple_element_t<
@@ -35,8 +35,7 @@ namespace garden
   template<class F, class... X>
   struct expr<F(X...)>
   {
-    static constexpr auto 
-    arity = sizeof...(X);
+    let arity = sizeof...(X);
   };
 }
 namespace garden
@@ -153,8 +152,8 @@ namespace garden
   template<class F>
   requires not requires
   { F::eval; }
-  static constexpr auto 
-  functional(F f) -> auto
+  let functional
+  (F f) -> auto
   {
     return reg_fn<F>{ f };
   }
@@ -162,8 +161,8 @@ namespace garden
   template<class F>
   requires requires
   { F::eval; }
-  static constexpr auto 
-  functional(F f) -> F
+  let functional
+  (F f) -> F
   {
     return f;
   }
@@ -251,7 +250,7 @@ namespace garden
   struct compose_fn
   : combinator_fn<compose_fn>
   {
-    static constexpr auto eval
+    let eval
     (auto... f) -> auto
     {
       return composed_fn( f... );
@@ -311,7 +310,7 @@ namespace garden
   struct adjoin_fn
   : combinator_fn<adjoin_fn>
   {
-    static constexpr auto eval
+    let eval
     (auto... f) -> auto
     {
       return adjoined_fn( f... );
@@ -379,7 +378,7 @@ namespace garden
   struct match_fn
   : combinator_fn<match_fn>
   {
-    static constexpr auto eval
+    let eval
     (auto... f) -> auto
     {
       return matched_fn( f... );
@@ -388,27 +387,32 @@ namespace garden
 }
 namespace garden
 { // basic combinators
-  static constexpr auto
-  compose = compose_fn{};
-  static constexpr auto
-  adjoin = adjoin_fn{};
-  static constexpr auto
-  match = match_fn{};
+  let compose = compose_fn{};
+  let adjoin = adjoin_fn{};
+  let match = match_fn{};
 }
 namespace garden
 { // functional operators
   constexpr auto operator^
   (auto x, auto f) -> auto
   { return functional( f )( x ); }
+
+  template<class F, class G>
+  requires std::is_copy_constructible_v<F>
   constexpr auto operator<<
-  (auto f, auto g) -> auto
+  (F f, G g) -> auto
   { return compose( f, g ); }
+
+  template<class F, class G>
+  requires std::is_copy_constructible_v<F>
   constexpr auto operator>>
-  (auto f, auto g) -> auto
+  (F f, G g) -> auto
   { return compose( g, f ); }
+
   constexpr auto operator&
   (auto f, auto g) -> auto
   { return adjoin( f, g ); }
+
   constexpr auto operator|
   (auto f, auto g) -> auto
   { return match( f, g ); }
@@ -434,8 +438,8 @@ namespace garden
   struct commutativity : property
   {
     template<class F, class X>
-    static constexpr auto
-    ensure(F f, X y, X a, X b)
+    let ensure
+    (F f, X y, X a, X b) -> void
     {
       if( y != f.eval( b,a ) )
         throw property::failed<commutativity>

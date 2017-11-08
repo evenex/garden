@@ -1,5 +1,6 @@
 #pragma once
 #include<any>
+#include<memory>
 #include<garden/functional.tcc>
 #include<garden/functor.tcc>
 namespace garden
@@ -24,7 +25,7 @@ namespace garden::range
   struct front_fn
   : fn<front_fn, arity<1>>
   {
-    static constexpr auto eval
+    let eval
     (Range r) -> auto
     {
       if( r.is_empty() )
@@ -35,11 +36,10 @@ namespace garden::range
       return r.front();
     }
   };
-
   struct next_fn
   : fn<next_fn, arity<1>>
   {
-    static constexpr auto eval
+    let eval
     (Range r) -> Range
     {
       if( r.is_empty() )
@@ -50,23 +50,19 @@ namespace garden::range
       return r.next();
     }
   };
-
   struct is_empty_fn
   : fn<is_empty_fn, arity<1>>
   {
-    static constexpr auto eval
+    let eval
     (Range r) -> bool
     {
       return r.is_empty();
     }
   };
 
-  static constexpr auto
-  front = front_fn{};
-  static constexpr auto
-  next = next_fn{};
-  static constexpr auto
-  is_empty = is_empty_fn{};
+  let front = front_fn{};
+  let next = next_fn{};
+  let is_empty = is_empty_fn{};
 }
 namespace garden
 { // STL-interface
@@ -123,7 +119,8 @@ namespace garden::range
   };
 
   template<class X>
-  auto from_ptr(X* x, size_t n) 
+  let from_ptr
+  (X* x, size_t n) 
   -> Range<contiguous_memory>
   {
     struct range_t
@@ -149,6 +146,45 @@ namespace garden::range
     };
 
     return range_t{ x, n };
+  }
+}
+namespace garden::range
+{ // from_container
+  template<class C>
+  let from_container
+  (C c) -> Range
+  {
+    using It = decltype(c.begin());
+
+    struct range_t
+    {
+      range_t(C c)
+      : ptr( std::make_shared<C>( c ) )
+      , iter( ptr->begin() ) {}
+
+      constexpr auto front() const
+      {
+        return *iter;
+      }
+      constexpr auto next() const
+      {
+        return range_t{ ptr, iter + 1 };
+      }
+      constexpr auto is_empty() const
+      {
+        return iter == ptr->end();
+      }
+
+    private:
+
+      range_t(std::shared_ptr<C> ptr, It iter)
+      : ptr( ptr ), iter( iter ) {}
+
+      std::shared_ptr<C> ptr;
+      It iter;
+    };
+
+    return range_t( c );
   }
 }
 namespace garden::range
@@ -178,14 +214,13 @@ namespace garden::range
   struct recurrence_fn
   : lifted_fn<recurrence_fn, arity<2>>
   {
-    static constexpr auto eval
+    let eval
     (auto f, auto x)
     {
       return Recurrence{ f, x };
     }
   };
-  static constexpr auto
-  recur = recurrence_fn{};
+  let recur = recurrence_fn{};
 }
 namespace garden::range
 { // drop/take
@@ -213,7 +248,7 @@ namespace garden::range
   : fn<take_fn, arity<2>>
   {
     template<Range R> 
-    static constexpr auto eval
+    let eval
     (size_t n, R r) -> Range
     {
       return Take<R>{ r, n };
@@ -223,7 +258,7 @@ namespace garden::range
   struct drop_fn
   : fn<drop_fn, arity<2>>
   {
-    static constexpr auto eval
+    let eval
     (size_t n, Range r) -> Range
     {
       for(; n > 0 and not( r^range::is_empty ); --n )
@@ -233,10 +268,8 @@ namespace garden::range
     }
   };
 
-  static constexpr auto
-  drop = drop_fn{};
-  static constexpr auto
-  take = take_fn{};
+  let drop = drop_fn{};
+  let take = take_fn{};
 }
 namespace garden::range
 { // transform
@@ -267,23 +300,21 @@ namespace garden::range
   : lifted_fn<transform_fn, arity<2>>
   {
     template<Range R> 
-    static constexpr auto eval
+    let eval
     (auto f, R r) -> Range
     {
       return Transformed{ r, f };
     }
   };
 
-  static constexpr auto
-  transform = transform_fn{};
+  let transform = transform_fn{};
 }
 namespace garden
 { // functor
   template<Range R>
   struct functor::instance<R>
   {
-    static constexpr auto
-    transform = range::transform;
+    let transform = range::transform;
   };
 }
 namespace garden::range
@@ -320,15 +351,14 @@ namespace garden::range
   : fn<only_fn>
   {
     template<class... X>
-    static constexpr auto eval
+    let eval
     (X... x) -> Range
     {
       return Only{ x... };
     }
   };
 
-  static constexpr auto
-  only = only_fn{};
+  let only = only_fn{};
 }
 namespace garden
 { // applicative
@@ -339,9 +369,7 @@ namespace garden
   template<Range R>
   struct applicative::instance<R>
   {
-    static constexpr auto
-    pure = range::only;
-    static constexpr auto
-    apply = 0;
+    let pure = range::only;
+    let apply = 0;
   };
 }

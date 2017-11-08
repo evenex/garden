@@ -2,6 +2,8 @@
 #include<type_traits>
 #include<stdexcept>
 
+#define let static constexpr auto
+
 namespace garden
 {
   struct property
