@@ -50,7 +50,7 @@ set(VISIBILITY "-fvisibility")
 set(OPENMP "-fopenmp")
 ################
 # COMMAND
-set(CMAKE_CXX_FLAGS "-O3 ${CXX_17} ${WARNINGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_DEBUG_FLAGS} ${CXX_17} ${WARNINGS}")
 #---------------
 
 ################

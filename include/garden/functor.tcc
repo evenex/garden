@@ -15,7 +15,7 @@ namespace garden
   namespace functor
   {
     struct transform_fn
-    : lifted_fn<transform_fn, arity<2>>
+    : lifted_fn<transform_fn, max_arity<2>>
     {
       let eval
       (auto f, Functor x) -> Functor

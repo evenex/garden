@@ -7,76 +7,53 @@ namespace garden
 {
   template<class R, Property... desc>
   concept bool Range = requires
-  (const R r)
+  (const R r, R r_mut)
   {
     { r.front() } -> std::any;
-    { r.next() } -> R;
-    { r.is_empty() } -> bool;
+    { r.empty() } -> bool;
+    { r_mut.advance() } -> R&;
   }
   and ( ... and models<R, desc> );
 }
 namespace garden::range
 {
   template<Range R>
-  using item_t = decltype( std::declval<R>().front() );
+  using item_t = std::decay_t<decltype(
+    std::declval<R>().front()
+  )>;
 }
 namespace garden::range
-{ // D-interface
-  struct front_fn
-  : fn<front_fn, arity<1>>
-  {
-    let eval
-    (Range r) -> auto
-    {
-      if( r.is_empty() )
-        throw std::range_error(
-          "accessed empty range" 
-        );
-
-      return r.front();
-    }
-  };
-  struct next_fn
-  : fn<next_fn, arity<1>>
-  {
-    let eval
-    (Range r) -> Range
-    {
-      if( r.is_empty() )
-        throw std::range_error(
-          "iterated empty range" 
-        );
-
-      return r.next();
-    }
-  };
-  struct is_empty_fn
-  : fn<is_empty_fn, arity<1>>
-  {
-    let eval
-    (Range r) -> bool
-    {
-      return r.is_empty();
-    }
-  };
-
-  let front = front_fn{};
-  let next = next_fn{};
-  let is_empty = is_empty_fn{};
+{ // exceptions
+  
+  template<Range R>
+  struct Error : std::range_error
+  { using std::range_error::range_error; };
 }
 namespace garden
 { // STL-interface
-  auto operator*(Range r) -> auto
+  template<Range R>
+  auto operator*(R r) -> auto
   {
-    return r^range::front;
+    if( r.empty() )
+      throw range::Error<R>(
+        "accessed empty range" 
+      );
+
+    return r.front();
   }
-  auto operator!=(Range r, nullptr_t) -> auto
+  auto operator!=(Range r, nullptr_t) -> bool
   {
-    return not( r^range::is_empty );
+    return not r.empty();
   }
-  auto operator++(Range& r) -> Range&
+  template<Range R>
+  auto operator++(R& r) -> R&
   {
-    return r = r^range::next;
+    if( r.empty() )
+      throw range::Error<R>(
+        "advanced empty range" 
+      );
+
+    return r.advance();
   }
   namespace range
   {
@@ -91,20 +68,44 @@ namespace garden
   }
 }
 namespace garden::range
+{ // D-interface
+  struct front_fn
+  : fn<front_fn, max_arity<1>>
+  {
+    let eval
+    (Range r) -> auto
+    {
+      return *r;
+    }
+  };
+  struct empty_fn
+  : fn<empty_fn, max_arity<1>>
+  {
+    let eval
+    (Range r) -> bool
+    {
+      return r.empty();
+    }
+  };
+
+  let front = front_fn{};
+  let empty = empty_fn{};
+}
+namespace garden::range
 { // equality
   template<Range A, Range B>
   auto operator==(A a, B b) -> bool
   {
     for( ;
-      not( a^is_empty or b^is_empty );
-      a = a^next, b = b^next
+      not( a^empty or b^empty );
+      ++a, ++b
     )
-      if( ( a^front ) == ( b^front ) )
+      if( *a == *b )
         continue;
       else
         return false;
 
-    return a^is_empty and b^is_empty;
+    return a^empty and b^empty;
   }
 }
 namespace garden::range
@@ -129,13 +130,14 @@ namespace garden::range
       {
         return *x;
       }
-      auto is_empty() const -> bool
+      auto empty() const -> bool
       {
         return n == 0;
       }
-      auto next() const -> range_t
+      auto advance() -> range_t&
       {
-        return { x+1, n-1 };
+        ++x; --n;
+        return *this;
       }
       auto data() -> X*
       {
@@ -150,12 +152,10 @@ namespace garden::range
 }
 namespace garden::range
 { // from_container
-  template<class C>
-  let from_container
-  (C c) -> Range
+  struct from_container_fn
+  : fn<from_container_fn, unary>
   {
-    using It = decltype(c.begin());
-
+    template<class C>
     struct range_t
     {
       range_t(C c)
@@ -166,16 +166,19 @@ namespace garden::range
       {
         return *iter;
       }
-      constexpr auto next() const
-      {
-        return range_t{ ptr, iter + 1 };
-      }
-      constexpr auto is_empty() const
+      constexpr auto empty() const -> bool
       {
         return iter == ptr->end();
       }
+      constexpr auto advance() -> range_t&
+      {
+        ++iter;
+        return *this;
+      }
 
     private:
+
+      using It = decltype(std::declval<C>().begin());
 
       range_t(std::shared_ptr<C> ptr, It iter)
       : ptr( ptr ), iter( iter ) {}
@@ -184,8 +187,37 @@ namespace garden::range
       It iter;
     };
 
-    return range_t( c );
-  }
+    template<class C>
+    let eval
+    (C c) -> Range
+    {
+      return range_t<C>( c );
+    }
+  };
+
+  let from_container = from_container_fn{};
+}
+namespace garden::range
+{ // to_container
+  template<template<class...> class C>
+  struct to_container_fn
+  : fn<to_container_fn<C>, unary>
+  {
+    template<Range R>
+    let eval
+    (R r) -> C<item_t<R>>
+    {
+      C<item_t<R>> c;
+
+      for( auto x : r )
+        c.push_back( x );
+
+      return c;
+    }
+  };
+
+  template<template<class...> class C>
+  let to_container = to_container_fn<C>{};
 }
 namespace garden::range
 { // recurrence
@@ -196,13 +228,14 @@ namespace garden::range
     {
       return x;
     }
-    auto next() const -> Recurrence
-    {
-      return { f, f( x ) };
-    }
-    auto is_empty() const -> bool
+    auto empty() const -> bool
     {
       return false;
+    }
+    auto advance() -> Recurrence&
+    {
+      x = f( x );
+      return *this;
     }
 
     F f; X x;
@@ -212,7 +245,7 @@ namespace garden::range
   Recurrence(F,X) -> Recurrence<F,X>;
 
   struct recurrence_fn
-  : lifted_fn<recurrence_fn, arity<2>>
+  : lifted_fn<recurrence_fn, max_arity<2>>
   {
     let eval
     (auto f, auto x)
@@ -224,7 +257,6 @@ namespace garden::range
 }
 namespace garden::range
 { // drop/take
-
   template<Range R>
   struct Take
   {
@@ -232,20 +264,21 @@ namespace garden::range
 
     constexpr auto front() const -> item_t<R>
     {
-      return r^range::front;
+      return *r;
     }
-    constexpr auto next() const -> Take
+    constexpr auto empty() const -> bool
     {
-      return { r^range::next, n-1 };
+      return n == 0 or r.empty();
     }
-    constexpr auto is_empty() const -> bool
+    constexpr auto advance() -> Take&
     {
-      return n == 0 or r^range::is_empty;
+      ++r; --n;
+      return *this;
     }
   };
   
   struct take_fn
-  : fn<take_fn, arity<2>>
+  : fn<take_fn, max_arity<2>>
   {
     template<Range R> 
     let eval
@@ -256,13 +289,13 @@ namespace garden::range
   };
 
   struct drop_fn
-  : fn<drop_fn, arity<2>>
+  : fn<drop_fn, max_arity<2>>
   {
     let eval
     (size_t n, Range r) -> Range
     {
-      for(; n > 0 and not( r^range::is_empty ); --n )
-        r = r^range::next;
+      while( n > 0 and not( r^empty ) )
+        --n, ++r;
 
       return r;
     }
@@ -270,6 +303,49 @@ namespace garden::range
 
   let drop = drop_fn{};
   let take = take_fn{};
+}
+namespace garden::range
+{ // take until
+  template<class F, Range R>
+  struct TakeUntil
+  {
+    constexpr
+    TakeUntil(F f, R r)
+    : f( f ), r( r ){}
+
+    constexpr auto front() const -> item_t<R>
+    {
+      return *r;
+    }
+    constexpr auto empty() const -> bool
+    {
+      return r.empty() or f( *r );
+    }
+    constexpr auto advance() -> TakeUntil&
+    {
+      ++r;
+
+      return *this;
+    }
+
+  private:
+    
+    F f; R r;
+  };
+
+  template<class F, Range R>
+  TakeUntil(F,R) -> TakeUntil<F,R>;
+
+  struct take_until_fn
+  : lifted_fn<take_until_fn, max_arity<2>>
+  {
+    let eval
+    (auto f, Range r) -> Range
+    {
+      return TakeUntil( f,r );
+    }
+  };
+  let take_until = take_until_fn{};
 }
 namespace garden::range
 { // transform
@@ -281,15 +357,16 @@ namespace garden::range
 
     constexpr auto front() const -> auto
     {
-      return f( r^range::front );
+      return f( *r );
     }
-    constexpr auto next() const -> Transformed
+    constexpr auto empty() const -> bool
     {
-      return { r^range::next, f };
+      return r.empty();
     }
-    constexpr auto is_empty() const -> bool
+    constexpr auto advance() -> Transformed&
     {
-      return r^range::is_empty;
+      ++r;
+      return *this;
     }
   };
 
@@ -297,7 +374,7 @@ namespace garden::range
   Transformed(R,F) -> Transformed<F,R>;
   
   struct transform_fn
-  : lifted_fn<transform_fn, arity<2>>
+  : lifted_fn<transform_fn, max_arity<2>>
   {
     template<Range R> 
     let eval
@@ -326,13 +403,18 @@ namespace garden::range
     : std::array<X,n>({ x... })
     , i( 0 ){}
 
-    constexpr auto next() const -> Only
+    constexpr auto front() const -> X
     {
-      return { *this, i+1 };
+      return (*this)[i];
     }
-    constexpr auto is_empty() const -> bool
+    constexpr auto empty() const -> bool
     {
       return i == n;
+    }
+    constexpr auto advance() -> Only&
+    {
+      ++i;
+      return *this;
     }
 
     private:
@@ -348,13 +430,14 @@ namespace garden::range
   Only(X...) -> Only<std::common_type_t<X...>, sizeof...(X)>;
 
   struct only_fn
-  : fn<only_fn>
+  : fn<only_fn, no_partial_application>
   {
     template<class... X>
     let eval
     (X... x) -> Range
     {
-      return Only{ x... };
+      return Only
+      { static_cast<std::common_type_t<X...>>( x )... };
     }
   };
 
@@ -372,4 +455,231 @@ namespace garden
     let pure = range::only;
     let apply = 0;
   };
+}
+namespace garden::range
+{ // chain
+  template<Range... R>
+  struct Chain
+  {
+    constexpr
+    Chain(R... r)
+    : rs( r... ){}
+
+    template<auto i = 0>
+    requires i < sizeof...(R)
+    auto front() const -> std::common_type_t<item_t<R>...>
+    {
+      auto& r = std::get<i>( rs );
+
+      if( r.empty() )
+        return front<i+1>();
+      else
+        return *r;
+    }
+    template<int=0>
+    auto front() const -> std::common_type_t<item_t<R>...>
+    {
+      throw std::range_error( "front out of bounds" );
+    }
+
+    template<auto i = 0>
+    requires i < sizeof...(R)
+    constexpr auto empty
+    () const -> bool
+    {
+      auto& r = std::get<i>( rs );
+
+      if( r.empty() )
+        return empty<i+1>();
+      else
+        return false;
+    }
+    template<int=0>
+    constexpr auto empty
+    () const -> bool
+    {
+      return true;
+    }
+
+    template<auto i = 0>
+    requires i < sizeof...(R)
+    constexpr auto advance
+    () -> Chain&
+    {
+      auto& r = std::get<i>( rs );
+
+      if( r^range::empty )
+        return advance<i+1>();
+      else
+        ++r;
+
+      return *this;
+    }
+    template<int=0>
+    constexpr auto advance
+    () -> Chain&
+    {
+      throw std::range_error( "next out of bounds" );
+    }
+
+  private:
+
+    constexpr 
+    Chain(std::tuple<R...> rs)
+    : rs( rs ){}
+
+    std::tuple<R...> rs;
+  };
+
+  template<class... R>
+  Chain(R...) -> Chain<R...>;
+
+  struct chain_fn
+  : fn<chain_fn, no_partial_application>
+  {
+    let eval
+    (auto... r) -> Range
+    {
+      return Chain( r... );
+    }
+  };
+  let chain = chain_fn{};
+}
+namespace garden::range
+{ // join
+  template<Range R>
+  requires Range<item_t<R>>
+  struct Join
+  {
+    Join(R ranges)
+    : rs( ranges )
+    {
+      while( not( rs^range::empty ) )
+      {
+        r = *rs;
+        ++rs;
+
+        if( not r->empty() )
+          break;
+      }
+
+      if( r and r->empty() )
+        r = {};
+    }
+
+    auto front() const -> item_t<item_t<R>>
+    {
+      return **r;
+    }
+    auto empty() const -> bool
+    {
+      return not r;
+    }
+    auto advance() -> Join&
+    {
+      r->advance();
+
+      while( r->empty() and not rs.empty() )
+      {
+        r = *rs;
+        ++rs;
+      }
+
+      if( r->empty() )
+        r = {};
+
+      return *this;
+    }
+
+  private:
+
+    R rs;
+    std::optional<item_t<R>> r;
+  };
+
+  template<class R>
+  Join(R) -> Join<R>;
+
+  struct join_fn
+  : fn<join_fn, no_partial_application>
+  {
+    let eval
+    (auto r) -> Range
+    {
+      return Join( r );
+    }
+  };
+  let join = join_fn{};
+}
+namespace garden
+{ // common predicates
+  struct equal_to_fn
+  : fn<equal_to_fn, max_arity<2>>
+  {
+    let eval
+    (auto a, auto b) -> bool
+    {
+      return a == b;
+    }
+  };
+
+  let equal_to = equal_to_fn{};
+}
+namespace garden::range
+{ // split
+  template<Range R>
+  struct Split
+  {
+    constexpr auto front() const -> Range
+    {
+      return cursor;
+    }
+    constexpr auto empty() const -> bool
+    {
+      return r.empty();
+    }
+    constexpr auto advance() -> Split&
+    {
+      for( auto _ : cursor )
+        ++r;
+
+      if( r != nullptr )
+        ++r;
+
+      cursor = take_until( equal_to( delim ), r );
+
+      return *this;
+    }
+
+    constexpr
+    Split(item_t<R> d, R r)
+    : delim( d ), r( r )
+    , cursor( 
+      take_until( equal_to( delim ), r )
+    ) {}
+
+  private:
+
+    item_t<R> delim;
+    R r;
+    TakeUntil<
+      equal_to_fn::bound_fn<item_t<R>>,
+      R
+    > cursor;
+  };
+
+  template<class D, class R>
+  Split(D, R) -> Split<R>;
+
+  struct split_fn
+  : fn<split_fn, max_arity<2>>
+  {
+    template<Range R>
+    let eval
+    (item_t<R> delim, R r) -> Range
+    {
+      return Split( delim, r );
+    }
+  };
+  let split = split_fn{};
 }

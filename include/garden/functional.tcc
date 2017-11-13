@@ -2,6 +2,7 @@
 #include<functional>
 #include<tuple>
 #include<variant>
+#include<map>
 #include<garden/proof.tcc>
 
 namespace garden
@@ -30,20 +31,76 @@ namespace garden
   };
 }
 namespace garden
-{ template<class...> class expr;
-  
+{ // expressions
+  template<class> 
+  struct is_expression
+  { let value = false; };
+
+  template<class F, class... X> 
+  struct is_expression<F(X...)>
+  { let value = true; };
+
+  template<class Fx>
+  let is_expression_v = is_expression<Fx>::value;
+}
+namespace garden::expr
+{ // expression traits
+  template<class> struct symbol;
+  template<class> struct arity;
+  template<class> struct domain;
+  template<class> struct codomain;
+
   template<class F, class... X>
-  struct expr<F(X...)>
-  {
-    let arity = sizeof...(X);
-  };
+  struct symbol<F(X...)>
+  { using type = F; };
+  template<class F, class... X>
+  struct arity<F(X...)>
+  { let value = sizeof...(X); };
+  template<class F, class... X>
+  struct domain<F(X...)>
+  { using type = std::tuple<X...>; };
+  template<class F, class... X>
+  struct codomain<F(X...)>
+  { using type = std::result_of_t<F(X...)>; };
+
+  template<class Fx>
+  using symbol_t = typename symbol<Fx>::type;
+  template<class Fx>
+  let arity_v = arity<Fx>::value;
+  template<class Fx>
+  using domain_t = typename domain<Fx>::type;
+  template<class Fx>
+  using codomain_t = typename codomain<Fx>::type;
 }
 namespace garden
 { template<class...> class fn;
 
+  struct no_partial_application : property {};
+  struct no_structural_decomposition : property {};
+  struct no_pattern_matching : property {};
+
   template<class F, class... properties>
   struct fn<F, properties...>
   {
+    struct has
+    {
+      let partial_application = not (
+        ... or std::is_same_v<
+          no_partial_application, properties
+        >
+      );
+      let structural_decomposition = not (
+        ... or std::is_same_v<
+          no_structural_decomposition, properties
+        >
+      );
+      let pattern_matching = not (
+        ... or std::is_same_v<
+          no_structural_decomposition, properties
+        >
+      );
+    };
+
     template<class... X>
     requires ( ... and models<F(X...), properties> )
     constexpr auto operator()
@@ -53,6 +110,8 @@ namespace garden
     }
 
     template<class... X>
+    requires has::structural_decomposition
+    and std::is_invocable_v<F, X...>
     constexpr auto operator()
     (std::tuple<X...> x) const -> auto
     {
@@ -60,6 +119,9 @@ namespace garden
     }
 
     template<class... X>
+    requires has::pattern_matching
+    and sizeof...(X) > 0
+    and ( ... and std::is_invocable_v<F, X> )
     constexpr auto operator()
     (std::variant<X...> x) const -> auto
     {
@@ -107,7 +169,8 @@ namespace garden
     };
 
     template<class... X>
-    requires not BetaReducible<F(X...)>
+    requires has::partial_application
+    and not BetaReducible<F(X...)>
     constexpr auto eval
     (X... x) const -> bound_fn<X...>
     {
@@ -172,14 +235,21 @@ namespace garden
 
   template<class F, class... properties>
   struct combinator_fn<F, properties...>
-  : fn<F, properties...>
+  : fn<F, properties...
+    , no_partial_application
+  >
   {
+    using fn_t = fn<F, properties...
+      , no_partial_application
+    >;
+
     template<class... G>
     constexpr auto operator()
     (G... g) const -> auto
     {
-      return fn<F, properties...>
-      ::operator()( functional( g )... );
+      return fn_t::operator()(
+        functional( g )...
+      );
     }
   };
 }
@@ -394,8 +464,8 @@ namespace garden
 namespace garden
 { // functional operators
   constexpr auto operator^
-  (auto x, auto f) -> auto
-  { return functional( f )( x ); }
+  (auto&& x, auto f) -> auto
+  { return f( x ); }
 
   template<class F, class G>
   requires std::is_copy_constructible_v<F>
@@ -420,20 +490,22 @@ namespace garden
 namespace garden
 { // some properties
   template<size_t n>
-  struct arity : property
+  struct max_arity : property
   {
     template<class Fx>
-    requires expr<Fx>::arity <= n
+    requires expr::arity_v<Fx> <= n
     and ( 
-      ( expr<Fx>::arity == 0 )
+      ( expr::arity_v<Fx> == 0 )
       == ( n == 0 )
     )
     and ( 
-      ( expr<Fx>::arity == n )
+      ( expr::arity_v<Fx> == n )
       == BetaReducible<Fx>
     )
     class proof{};
   };
+
+  using unary = max_arity<1>;
 
   struct commutativity : property
   {
@@ -445,6 +517,67 @@ namespace garden
         throw property::failed<commutativity>
         { __PRETTY_FUNCTION__ };
     }
+  };
+
+  template<auto i, template<class...> class trait, class... TraitArgs>
+  struct arg : property
+  {
+    template<class... X>
+    requires trait<ith_t<i, X...>, TraitArgs...>::value
+    class proof{};
+  };
+
+  template<template<class...> class trait, class... TraitArgs>
+  struct all_args : property
+  {
+    template<class... X>
+    requires ( ... and trait<X, TraitArgs...>::value )
+    class proof{};
+  };
+
+  template<template<class...> class trait, class... TraitArgs>
+  struct any_args : property
+  {
+    template<class... X>
+    requires ( ... or trait<X, TraitArgs...>::value )
+    class proof{};
+  };
+}
+namespace garden
+{ template<class...> struct memoized_fn;
+
+  template<class F, class... properties, class Y, class... X>
+  struct memoized_fn<Y(X...), F, properties...>
+  : fn<memoized_fn<Y(X...), F, properties...>
+    , properties...
+  >
+  {
+    auto eval
+    (X... x) const -> Y
+    {
+      if( auto found 
+        = memoized.find( std::tuple<X...>( x... ) );
+        found != memoized.end()
+      )
+      {
+        return found->second;
+      }
+      else
+      {
+        auto& f = static_cast<const F&>( *this );
+
+        return memoized.insert(
+          { std::tuple<X...>( x... ), f.eval( x... ) }
+        ).first->second;
+      }
+    }
+
+  private:
+    
+    inline static auto 
+    memoized = std::map<
+      std::tuple<X...>, Y
+    >{};
   };
 }
 namespace garden

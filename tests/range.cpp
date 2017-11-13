@@ -3,6 +3,7 @@
 
 #define MODULE "range"
 
+#include<iostream>
 namespace garden
 {
   int x[5] = { 1, 2, 3, 4, 5 };
@@ -94,5 +95,47 @@ namespace garden
       a += i;
 
     REQUIRE(( a == 6 ));
+  }
+  EXAMPLE( chain )
+  {
+    auto a = 0;
+    for( auto i
+      : range::chain(
+        range::only( 1, 2, 3 ),
+        range::only( 4, 5 )
+      )
+    )
+      a += i;
+
+    REQUIRE(( a == 15 ));
+  }
+  EXAMPLE( join )
+  {
+    auto a = 0;
+    for( auto i
+      : range::join( range::only(
+          range::only( 1, 2, 3 ),
+          range::only( 4, 5, 6 )
+      ) )
+    )
+      a += i;
+
+    REQUIRE(( a == 21 ));
+  }
+  EXAMPLE( split )
+  {
+    for( auto r
+      : range::split( 0, range::only(
+        1, 2, 3, 0, 3, 3, 0, 6, 0
+      ) )
+    )
+    {
+      auto a = 0;
+
+      for( auto i : r )
+        a += i;
+
+      REQUIRE(( a == 6 ));
+    }
   }
 }

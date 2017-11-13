@@ -28,5 +28,5 @@ EXAMPLE( hello )
 
   REQUIRE(( t.top() == 1 ));
   REQUIRE(( t.down().front().top() == 2 ));
-  REQUIRE(( t.down().next().front().top() == 3 ));
+  REQUIRE(( t.down().advance().front().top() == 3 ));
 }
