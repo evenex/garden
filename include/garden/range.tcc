@@ -1,30 +1,58 @@
 #pragma once
 #include<any>
 #include<memory>
+#include<optional>
 #include<garden/functional.tcc>
 #include<garden/functor.tcc>
 namespace garden
-{
-  template<class R, Property... desc>
-  concept bool Range = requires
-  (const R r, R r_mut)
+{ // concept
+  namespace range
+  { template<class> class instance; }
+  namespace range
   {
-    { r.front() } -> std::any;
-    { r.empty() } -> bool;
-    { r_mut.advance() } -> R&;
+    template<class R> 
+    requires 
+    requires(const R r, R r_mut)
+    {
+      { r.front() } -> std::any;
+      { r.empty() } -> bool;
+      { r_mut.advance() } -> R&;
+    }
+    struct instance<R>
+    {
+      let front
+      (R r) -> auto
+      {
+        return r.front();
+      }
+      let empty
+      (R r) -> auto
+      {
+        return r.empty();
+      }
+      let advance
+      (R& r) -> auto&
+      {
+        return r.advance();
+      }
+    };
   }
-  and ( ... and models<R, desc> );
-}
-namespace garden::range
-{
-  template<Range R>
-  using item_t = std::decay_t<decltype(
-    std::declval<R>().front()
-  )>;
+
+  template<class R, class... P>
+  concept bool Range = requires
+  {
+    requires
+    requires(range::instance<R> i, const R r, R r_mut)
+    {
+      { i.front( r ) } -> std::any;
+      { i.empty( r ) } -> bool;
+      { i.advance( r_mut ) } -> R&;
+    }
+    and ( ... and std::is_constructible_v<P, R> );
+  };
 }
 namespace garden::range
 { // exceptions
-  
   template<Range R>
   struct Error : std::range_error
   { using std::range_error::range_error; };
@@ -34,26 +62,31 @@ namespace garden
   template<Range R>
   auto operator*(R r) -> auto
   {
-    if( r.empty() )
+    using Instance = range::instance<R>;
+
+    if( Instance::empty( r ) )
       throw range::Error<R>(
         "accessed empty range" 
       );
 
-    return r.front();
+    return Instance::front( r );
   }
-  auto operator!=(Range r, nullptr_t) -> bool
+  template<Range R>
+  auto operator!=(R r, nullptr_t) -> bool
   {
-    return not r.empty();
+    return not range::instance<R>::empty( r );
   }
   template<Range R>
   auto operator++(R& r) -> R&
   {
-    if( r.empty() )
+    using Instance = range::instance<R>;
+
+    if( Instance::empty( r ) )
       throw range::Error<R>(
         "advanced empty range" 
       );
 
-    return r.advance();
+    return Instance::advance( r );
   }
   namespace range
   {
@@ -70,26 +103,46 @@ namespace garden
 namespace garden::range
 { // D-interface
   struct front_fn
-  : fn<front_fn, max_arity<1>>
+  : Fn<front_fn>
   {
+    let assume(Range){}
+
     let eval
-    (Range r) -> auto
+    (auto r) -> auto
     {
       return *r;
     }
   };
   struct empty_fn
-  : fn<empty_fn, max_arity<1>>
+  : Fn<empty_fn>
   {
+    let assume(Range){}
+
     let eval
-    (Range r) -> bool
+    (auto r) -> bool
     {
-      return r.empty();
+      return not ( r != nullptr );
     }
   };
 
   let front = front_fn{};
   let empty = empty_fn{};
+}
+namespace garden::range
+{ // item traits & concepts
+  template<Range R>
+  using item_t = decltype(
+    instance<R>::front( std::declval<R>() )
+  );
+
+  template<class X>
+  struct of
+  {
+    template<Range R>
+    requires std::is_convertible_v<item_t<R>, X>
+    constexpr
+    of(R){}
+  };
 }
 namespace garden::range
 { // equality
@@ -110,19 +163,19 @@ namespace garden::range
 }
 namespace garden::range
 { // from ptr
-  struct contiguous_memory : property
+  struct with_contiguous_memory
   {
-    template<Range X> 
+    template<Range R> 
     requires 
-    requires(X x)
-    { { x.data() } -> item_t<X>*; }
-    class proof{};
+    requires(R r)
+    { { r.data() } -> item_t<R>*; }
+    with_contiguous_memory(R){}
   };
 
   template<class X>
   let from_ptr
   (X* x, size_t n) 
-  -> Range<contiguous_memory>
+  -> Range<with_contiguous_memory>
   {
     struct range_t
     {
@@ -153,7 +206,7 @@ namespace garden::range
 namespace garden::range
 { // from_container
   struct from_container_fn
-  : fn<from_container_fn, unary>
+  : Fn<from_container_fn>
   {
     template<class C>
     struct range_t
@@ -193,17 +246,20 @@ namespace garden::range
     {
       return range_t<C>( c );
     }
-  };
 
+    let assume(auto){}
+  };
   let from_container = from_container_fn{};
 }
 namespace garden::range
 { // to_container
   template<template<class...> class C>
   struct to_container_fn
-  : fn<to_container_fn<C>, unary>
+  : Fn<to_container_fn<C>>
   {
-    template<Range R>
+    let assume(Range){}
+
+    template<class R>
     let eval
     (R r) -> C<item_t<R>>
     {
@@ -245,8 +301,11 @@ namespace garden::range
   Recurrence(F,X) -> Recurrence<F,X>;
 
   struct recurrence_fn
-  : lifted_fn<recurrence_fn, max_arity<2>>
+  : Lifted<recurrence_fn>
   {
+    let assume(auto){}
+    let assume(auto,auto){}
+
     let eval
     (auto f, auto x)
     {
@@ -276,23 +335,31 @@ namespace garden::range
       return *this;
     }
   };
+
+  template<class R>
+  Take(R, size_t) -> Take<R>;
   
   struct take_fn
-  : fn<take_fn, max_arity<2>>
+  : Fn<take_fn>
   {
-    template<Range R> 
+    let assume(size_t){}
+    let assume(size_t, Range){}
+
     let eval
-    (size_t n, R r) -> Range
+    (size_t n, auto r) -> Range
     {
-      return Take<R>{ r, n };
+      return Take{ r, n };
     }
   };
 
   struct drop_fn
-  : fn<drop_fn, max_arity<2>>
+  : Fn<drop_fn>
   {
+    let assume(size_t){}
+    let assume(size_t, Range){}
+
     let eval
-    (size_t n, Range r) -> Range
+    (size_t n, auto r) -> Range
     {
       while( n > 0 and not( r^empty ) )
         --n, ++r;
@@ -337,10 +404,13 @@ namespace garden::range
   TakeUntil(F,R) -> TakeUntil<F,R>;
 
   struct take_until_fn
-  : lifted_fn<take_until_fn, max_arity<2>>
+  : Lifted<take_until_fn>
   {
+    let assume(auto){}
+    let assume(auto, Range){}
+
     let eval
-    (auto f, Range r) -> Range
+    (auto f, auto r) -> Range
     {
       return TakeUntil( f,r );
     }
@@ -374,11 +444,13 @@ namespace garden::range
   Transformed(R,F) -> Transformed<F,R>;
   
   struct transform_fn
-  : lifted_fn<transform_fn, max_arity<2>>
+  : Lifted<transform_fn>
   {
-    template<Range R> 
+    let assume(auto){}
+    let assume(auto, Range){}
+
     let eval
-    (auto f, R r) -> Range
+    (auto f, auto r) -> Range
     {
       return Transformed{ r, f };
     }
@@ -396,7 +468,7 @@ namespace garden
 }
 namespace garden::range
 { // only
-  template<class X, auto n>
+  template<class X, size_t n>
   struct Only : std::array<X,n>
   {
     Only(auto... x)
@@ -416,12 +488,12 @@ namespace garden::range
       ++i;
       return *this;
     }
+    constexpr auto begin() -> auto
+    {
+      return std::array<X,n>::begin() + i;
+    }
 
-    private:
-
-    Only(const Only& that, size_t i)
-    : std::array<X,n>( that )
-    , i( i ){}
+  private:
 
     size_t i;
   };
@@ -430,7 +502,7 @@ namespace garden::range
   Only(X...) -> Only<std::common_type_t<X...>, sizeof...(X)>;
 
   struct only_fn
-  : fn<only_fn, no_partial_application>
+  : Fn<only_fn, no_partial_application>
   {
     template<class... X>
     let eval
@@ -535,7 +607,7 @@ namespace garden::range
   Chain(R...) -> Chain<R...>;
 
   struct chain_fn
-  : fn<chain_fn, no_partial_application>
+  : Fn<chain_fn, no_partial_application>
   {
     let eval
     (auto... r) -> Range
@@ -601,7 +673,7 @@ namespace garden::range
   Join(R) -> Join<R>;
 
   struct join_fn
-  : fn<join_fn, no_partial_application>
+  : Fn<join_fn, no_partial_application>
   {
     let eval
     (auto r) -> Range
@@ -614,15 +686,17 @@ namespace garden::range
 namespace garden
 { // common predicates
   struct equal_to_fn
-  : fn<equal_to_fn, max_arity<2>>
+  : Fn<equal_to_fn>
   {
+    let assume(auto){}
+    let assume(auto,auto){}
+
     let eval
     (auto a, auto b) -> bool
     {
       return a == b;
     }
   };
-
   let equal_to = equal_to_fn{};
 }
 namespace garden::range
@@ -663,7 +737,7 @@ namespace garden::range
     item_t<R> delim;
     R r;
     TakeUntil<
-      equal_to_fn::bound_fn<item_t<R>>,
+      equal_to_fn::Bind<item_t<R>>,
       R
     > cursor;
   };
@@ -672,9 +746,13 @@ namespace garden::range
   Split(D, R) -> Split<R>;
 
   struct split_fn
-  : fn<split_fn, max_arity<2>>
+  : Fn<split_fn>
   {
+    let assume(auto){}
     template<Range R>
+    let assume(item_t<R>, R){}
+
+    template<class R>
     let eval
     (item_t<R> delim, R r) -> Range
     {
@@ -682,4 +760,95 @@ namespace garden::range
     }
   };
   let split = split_fn{};
+}
+#include<iostream>
+namespace garden::range
+{ // fold
+  struct foldl_fn
+  : Fn<foldl_fn>
+  {
+    let eval
+    (auto f, Range r) -> auto
+    {
+      auto z = *r;
+
+      return eval( f, z, ++r );
+    }
+
+    let eval
+    (auto f, auto z, Range r) -> auto
+    {
+      for( auto x : r )
+        z = f( z, x );
+
+      return z;
+    }
+  };
+  let foldl = foldl_fn{};
+}
+#include<map>
+#include<set>
+namespace garden // TODO searchable concept?
+{ // container functions
+  struct contains_fn
+  : Fn<contains_fn>
+  {
+    let assume(auto){}
+    let assume(auto, auto){}
+
+    template<class X>
+    let eval
+    (X x, std::map<X, auto> in) -> bool
+    {
+      return in.count( x );
+    }
+
+    template<class X>
+    let eval
+    (X x, std::set<X> in) -> bool
+    {
+      return in.count( x );
+    }
+  };
+
+  struct find_fn
+  : Fn<find_fn>
+  {
+    let assume(auto){}
+    let assume(auto, auto){}
+
+    template<class X, class Y>
+    let eval
+    (X x, std::map<X, Y> in) -> std::optional<Y>
+    {
+      if( auto it = in.find( x );
+        it != in.end() 
+      )
+        return it->second;
+      else
+        return {};
+    }
+  };
+
+  let contains = contains_fn{};
+  let find = find_fn{};
+}
+namespace garden::range
+{ // maybe_front
+  struct maybe_front_fn
+  : Fn<maybe_front_fn>
+  {
+    let assume(Range){}
+
+    template<class R>
+    let eval
+    (R r) -> std::optional<item_t<R>>
+    {
+      if( r^empty )
+        return {};
+      else
+        return r^front;
+    }
+  };
+  let maybe_front = maybe_front_fn{};
 }

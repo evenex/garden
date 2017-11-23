@@ -138,4 +138,23 @@ namespace garden
       REQUIRE(( a == 6 ));
     }
   }
+  EXAMPLE( foldl )
+  {
+    REQUIRE(( 
+      range::foldl( 
+        std::plus{},
+        range::only( 1, 2, 3 )
+      ) == 6
+    ));
+
+    REQUIRE(( 
+      range::foldl( 
+        std::plus{}, std::string{ "a" },
+        range::only( 
+          std::string{ "b" },
+          std::string{ "c" }
+        )
+      ) == "abc"
+    ));
+  }
 }

@@ -7,45 +7,62 @@ using namespace garden;
 using namespace std::literals::string_literals;
 
 struct increment_fn
-: fn<increment_fn, max_arity<1>>
+: Fn<increment_fn>
 {
+  let eval
+  (auto x) -> auto
+  { return x+1; }
+
   template<class X>
   requires 
   requires(X x){ x+1; }
-  static constexpr auto eval
-  (X x) -> auto
-  { return x+1; }
+  let assume
+  (X){}
 };
 struct square_fn
-: fn<square_fn, max_arity<1>>
+: Fn<square_fn>
 {
+  let eval
+  (auto x) -> auto
+  { return x*x; }
+
   template<class X>
   requires
   requires(X x){ x*x; }
-  static constexpr auto eval
-  (X x) -> auto
-  { return x*x; }
+  let assume
+  (X){}
 };
 struct add_fn
-: fn<add_fn, max_arity<2>, commutativity>
+: Fn<add_fn>
 {
-  template<class X>
-  static constexpr auto eval
-  (X a, X b) -> auto
+  let eval
+  (auto a, auto b) -> auto
   { return a+b; }
+
+  let assume(auto){}
+
+  template<class X, class Y>
+  requires requires
+  { typename std::common_type<X,Y>::type; }
+  let assume
+  (X a, Y b)
+  {
+    if( eval( a,b ) != eval( b,a ) )
+      throw 0;
+  }
 };
 struct size_of_fn
-: fn<size_of_fn, max_arity<1>>
+: Fn<size_of_fn>
 {
   template<class X>
-  static constexpr auto eval
+  let eval
   (X) -> size_t
   {
     return sizeof(X);
   }
 };
 
-EXAMPLE( max_arity property ) 
+EXAMPLE( assumption validation ) 
 {
   using F = increment_fn;
 
@@ -64,16 +81,11 @@ EXAMPLE( max_arity property )
   using H = square_fn;
 
   REQUIRE(( not std::is_invocable_v<H, void*> ));
-}
-EXAMPLE( commutativity property ) 
-{
-  add_fn f;
+  
+  G g;
 
-  REQUIRE_NOTHROW( f( 1, 2 ) );
-
-  REQUIRE_THROWS_AS( f( "foo"s, "bar"s ),
-    property::failed<commutativity>
-  );
+  REQUIRE_NOTHROW( g( 1, 2 ) );
+  REQUIRE_THROWS( g( "foo"s, "bar"s ) );
 }
 EXAMPLE( partial application )
 {
@@ -92,6 +104,18 @@ EXAMPLE( destructuring )
   using V = std::variant<long, short>;
 
   REQUIRE( g( V( 1L ) ) == sizeof(long) );
+}
+EXAMPLE( destructuring with partial application )
+{
+  add_fn f;
+
+  auto g = f(1);
+
+  using T = std::tuple<long>;
+  using V = std::variant<char, int>;
+
+  REQUIRE( g( T( 1 ) ) == 2 );
+  REQUIRE( g( V( 256 ) ) == 257 );
 }
 EXAMPLE( composition )
 {

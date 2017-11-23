@@ -5,14 +5,14 @@
 
 namespace garden
 {
-  template<class T, Property... desc>
+  template<class T, class... P>
   concept bool Tree = requires
   (const T t)
   {
     { t.top() } -> std::any;
     { t.down() } -> Range;
   }
-  and ( ... and models<T, desc> );
+  and ( ... and std::is_constructible_v<P, T> );
 }
 namespace garden::tree
 {

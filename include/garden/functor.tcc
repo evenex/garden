@@ -15,7 +15,7 @@ namespace garden
   namespace functor
   {
     struct transform_fn
-    : lifted_fn<transform_fn, max_arity<2>>
+    : Lifted<transform_fn>
     {
       let eval
       (auto f, Functor x) -> Functor
@@ -24,8 +24,21 @@ namespace garden
           std::decay_t<decltype(x)>
         >::transform( f, x );
       }
+
+      let assume
+      (auto){}
+      let assume
+      (auto, auto){}
     };
     let transform = transform_fn{};
+  }
+}
+namespace garden
+{
+  let operator
+  %(auto f, Functor x) -> Functor
+  {
+    return functor::transform( f, x );
   }
 }
 #include<optional>
@@ -36,7 +49,7 @@ namespace garden
   struct functor::instance<X*>
   {
     struct transform_fn
-    : fn<transform_fn>
+    : Fn<transform_fn>
     {
       template<class F>
        let eval
@@ -56,7 +69,7 @@ namespace garden
   struct functor::instance<std::optional<X>>
   {
     struct transform_fn
-    : fn<transform_fn>
+    : Fn<transform_fn>
     {
       template<class F>
       let eval
@@ -75,7 +88,7 @@ namespace garden
   struct functor::instance<std::vector<X>>
   {
     struct transform_fn
-    : fn<transform_fn>
+    : Fn<transform_fn>
     {
       template<class F>
       let eval
@@ -94,4 +107,36 @@ namespace garden
     };
     let transform = transform_fn{};
   };
+}
+namespace garden
+{ // or_default TODO move
+  struct or_default_fn
+  : Fn<or_default_fn>
+  {
+    let assume
+    (auto){}
+    let assume
+    (auto, std::optional<auto>){}
+
+    template<class X>
+    let eval
+    (X x, std::optional<X> mx) -> X
+    {
+      if( mx )
+        return *mx;
+      else
+        return x;
+    }
+
+    template<class X>
+    requires std::is_constructible_v<
+      X
+    >
+    let eval
+    (std::optional<X> mx) -> X
+    {
+      return eval( X{}, mx );
+    }
+  };
+  let or_default = or_default_fn{};
 }
