@@ -26,9 +26,9 @@ namespace garden
   };
 }
 
-namespace garden
+namespace std
 { // common show types
-  template<Tuple X>
+  template<garden::Tuple X>
   auto operator<<
   (std::ostream& out, X x) -> std::ostream&
   {
@@ -158,15 +158,8 @@ namespace std
   { return {}; }
 }
 
-template<class X>
-auto hash
-(X x) -> std::size_t
-{
-  return std::hash<X>{}( x );
-}
-
 namespace garden
-{ // optional application
+{ // optional adjoin
   let operator
   &(std::optional<auto> x, std::optional<auto> y)
   -> std::optional<auto>
@@ -224,97 +217,184 @@ namespace garden
   };
   let subtract = subtract_fn{};
 }
+
 namespace game
 {
-  using Id = std::string;
-  
-  struct Energy
+  class Location;
+  class Offer;
+  class Agent;
+  class Item;
+
+  template<class X>
+  struct Link
   {
-    Id type;
-    int volume = 0;
+    explicit constexpr Link
+    (auto... args)
+    : ptr( std::make_shared<X>( args... ) )
+    {}
+
+    constexpr auto operator
+    ->() -> auto
+    {
+      return ptr;
+    }
+    constexpr auto operator
+    ->() const -> auto
+    {
+      return ptr;
+    }
+
+    constexpr auto operator
+    <(const Link& that) const
+    {
+      return ptr < that.ptr;
+    }
+
+  private:
+
+    std::shared_ptr<X> ptr;
   };
-  LENS( type )
-  LENS( volume )
+
+  struct Node
+  {
+    Node() = default;
+    Node(Node&&) = default;
+    Node(const Node&) = delete;
+  };
+
+  LENS( name )
+  LENS( owner )
+  struct Item : Node
+  {
+    std::string name;
+
+    std::variant<
+      Link<Agent>,
+      Link<Location>
+    > owner;
+  };
+
+  LENS( location )
+  LENS( offers )
+  LENS( items )
+  struct Agent : Node
+  {
+    std::string name;
+    Link<Location> location;
+
+    database::Table<
+      Link<Offer>, identity_fn
+    > offers;
+
+    database::Table<
+      Link<Item>, identity_fn,
+      name_fn
+    > items;
+  };
+
+  LENS( agents )
+  struct Location : Node
+  {
+    std::string name;
+
+    database::Table<
+      Link<Agent>, name_fn
+    > agents;
+
+    database::Table<
+      Link<Item>, identity_fn,
+      name_fn
+    > items;
+  };
 
   auto operator
-  <<(std::ostream& out, Energy energy) -> std::ostream&
+  <<(std::ostream& out, Link<Agent> a) -> std::ostream&
   {
-    auto[ type, volume ] = energy;
+    out << (a^name) 
+    << " @ " << (a^location^name)
+    << ": " << std::endl;
 
-    return out << text( type, ": ", volume );
+    for( auto x : a^items )
+      out << '\t' << (x^name) << std::endl;
+    
+    return out;
+  }
+  auto operator
+  <<(std::ostream& out, Link<Location> l) -> std::ostream&
+  {
+    out << (l^name) << ": " << std::endl;
+
+    for( auto a : l^agents )
+      out << '\t' << (a^name) << std::endl;
+
+    return out;
+  }
+  auto operator
+  <<(std::ostream& out, Link<Item> x) -> std::ostream&
+  {
+    out << (x^name) << " @ "
+    << (x^owner^name) << std::endl;
+
+    return out;
   }
 
-  struct Entity
+  struct relocate_to_fn
+  : Fn<relocate_to_fn>
   {
-    struct Memory
+    static auto eval
+    (Link<Location> l, Link<Agent> a) -> auto
     {
-      Id who;
-      Energy what;
-      Id where;
+      a^( location 
+        >> agents
+        >> erase( a )
+      );
 
-      struct hash_fn
-      : Fn<hash_fn>
-      {
-        static auto eval
-        (Memory m) -> std::size_t
-        {
-          auto&[ who, what, where ] = m;
+      l^( agents
+        >> insert( a )
+      );
 
-          return hash( who )
-          ^ hash( what.type )
-          ^ hash( what.volume )
-          ^ hash( where )
-          ;
-        }
-      };
-    };
+      a^location( l );
 
-    Id name;
-    Id location;
-
-    database::Table<Energy, type_fn> inventory;
-    database::Table<Memory, Memory::hash_fn> memory;
-
-    std::vector<std::function<Entity(Entity)>> strategy;
-  };
-  LENS( name )
-  LENS( location )
-
-  struct transfer
-  {
-    Energy x;
-
-    transfer(Energy x)
-    : x( x ) {}
-
-    auto to
-    (Entity b) const -> auto
-    {
-      return [=]
-      (Entity a) -> std::pair<Entity, Entity>
-      {
-        auto impulse = [&]
-        (auto op, Entity e) -> Entity
-        {
-          if( not e.inventory( x ) )
-            e.inventory.insert({ x.type });
-            
-          e.inventory.modify( 
-            x.type, volume << (
-              volume >> op( x^volume )
-              & identity
-            )
-          );
-            
-          return e;
-        };
-
-        return std::pair(
-          impulse( subtract, a ),
-          impulse( add, b )
-        );
-      };
+      return l;
     }
+  };
+  let relocate_to = relocate_to_fn{};
+
+  struct transfer_to_fn
+  : Fn<transfer_to_fn>
+  {
+    static auto eval
+    (Link<Agent> a, Link<Item> x) -> auto
+    {
+      x^owner^items^erase( x );
+      
+      a^items^insert( x );
+
+      x^owner( a );
+
+      return x;
+    }
+  };
+  let transfer_to = transfer_to_fn{};
+}
+namespace game
+{
+  struct World
+  {
+    static inline auto 
+    locations = database::table<
+      Link<Location>
+    >( name );
+
+    static inline auto
+    agents = database::table<
+      Link<Agent>
+    >( name, location );
+
+    static inline auto
+    items = database::table<
+      Link<Item>
+    >( identity );
   };
 }
 
@@ -323,207 +403,60 @@ int main(int argc, char** argv)
   using namespace game;
   using namespace range;
 
-  auto entities = database::table<Entity>(
-    name, location
-  );
-
-  entities.insert({ "bill", "zone1" });
-  entities.insert({ "ted", "zone1" });
-  entities.insert({ "fred", "zone2" });
-
-  entities.modify( "fred", []
-    (auto fred) -> Entity
-    {
-      fred.inventory
-      .insert({ "butter", 2 });
-
-      return fred;
-    }
-  );
-
-  auto play_as = [&]
-  (Entity you) -> std::tuple<>
+  auto new_agent = [&]
+  (std::string name, Link<Location> loc) -> Link<Agent>
   {
-    auto& your = you;
+    auto x = Link<Agent>{};
 
-    auto update = [&]()
-    {
-      entities.update( you );
+    x->name = name;
+    x->location = loc;
 
-      for( auto entity : entities )
-        if( entity.name != your.name )
-          entities.update( entity );
+    loc^agents
+    ^insert( x );
 
-      for( auto entity : entities )
-        entities.modify( entity, identity );
+    return *World::agents.insert( x );
+  };
+  auto new_location = [&]
+  (std::string name) -> Link<Location>
+  {
+    auto x = Link<Location>{};
 
-      you = *entities( your.name );
-    };
+    x->name = name;
 
-    auto quit = [&](auto) -> std::string
-    {
-      throw repl::exit_loop{};
-    };
-    auto help = [&](auto) -> std::string
-    {
-      throw repl::show_help{};
-    };
-    auto look = [&](auto subject)
-    {
-      if( subject.empty() )
-      {
-        std::stringstream out;
+    return *World::locations.insert( x );
+  };
+  auto new_item = [&]
+  (std::string name, Link<auto> owner) -> Link<auto>
+  {
+    auto x = Link<Item>{};
 
-        auto show = show_fn{ out };
+    x->name = name;
+    x->owner = owner;
 
-        show( your.location, ":\n" );
+    owner^items^insert( x );
 
-        for( auto entity : entities( location, your.location ) )
-          if( entity.name != your.name )
-            show( '\t', entity.name, '\n' );
-
-        return out.str();
-      }
-      else
-      {
-        if( subject.front() == "self" )
-          subject.front() = your.name;
-
-        if( auto a = entities( subject.front() ) )
-        {
-          if( a->location == your.location )
-          {
-            std::stringstream out;
-
-            auto show = show_fn{ out };
-
-            show( a->name, ":\n" );
-
-            for( auto x : a->inventory )
-              show( '\t', x.type, ": ", x.volume, '\n' );
-
-            return out.str();
-          }
-          else
-          {
-            return text( a->name, " is not here" );
-          }
-        }
-        else
-        {
-          return text( subject.front(), " is not known" );
-        }
-      }
-    };
-    auto move = [&](auto destination)
-    {
-      if( destination.empty() )
-        return text( "move (destination)" );
-
-      auto x = destination.front();
-
-      if( x == your.location )
-        return text( 
-          your.name, " is already at ", your.location 
-        );
-
-      your.strategy.push_back( location( x ) );
-
-      update();
-
-      return text( 
-        your.name, " arrived at ", your.location
-      );
-    };
-    auto wait = [&](auto)
-    {
-      update();
-
-      return text( your.name, " waited at ", your.location );
-    };
-    auto hit = [&](auto args)
-    {
-      if( args.size() < 3 )
-        return text( "hit (who) (how many) (what)" );
-
-      auto who = args[0];
-      auto how_many = std::stoi( args[1] );
-      auto what = args[2];
-
-      if( auto whom = entities( who ) )
-      {
-        you^transfer({ what, how_many })
-        .to( *whom );
-
-        return text( 
-          "you have ", your.inventory( what ),
-          ", ",
-          who, " has ", whom->inventory( what )
-        );
-      }
-    };
-    auto ask = [&](auto args)
-    {
-      if( args.size() < 2 )
-        return text( "ask (who) (what)" );
-
-      auto who = args[0];
-      auto what = args[1];
-
-      // apply the diff
-      // check constraints
-      // rollback if violated
-
-      // a diff is a temporary link in the graph
-      // each entity struct need only define a variant
-      // entity can have variant operators for diffs
-      // direcy modification not allowed, only new diff links can be set
-      // what about generating a candidate subgraph?
-
-      // functions on diff links
-      // typed engine evaluates typed links (visitor?)
-      // create candidate subgraph (softlinked to outer graph?)
-      // check constraints on combined candidate graph
-      // but only up to some subgraph b/c we dont want to 
-      // do a full graph traversal for every diff link
-
-      if( auto entity = entities( who ) )
-      {
-        if( who == what )
-        {
-          return text( 
-            entity->name, " is fine, thanks for asking" 
-          );
-        }
-        else for( auto trade : entity->memory )
-        {
-          return text( "fail" );
-        }
-
-        return text( 
-          entity->name, " doesn't know about ", what 
-        );
-      }
-      else
-      {
-        return text( "unknown entity" );
-      }
-    };
-
-    repl::main({
-      { "help", help }
-      , { "quit", quit }, { "q", quit }
-
-      , { "look", look }, { "l", look }
-      , { "move", move }, { "m", move }
-      , { "wait", wait }, { "w", wait }
-
-      , { "ask", ask }
-      , { "hit", hit }
-    });
-
-    return {};
+    return *World::items.insert( x );
   };
 
-  play_as % entities( "bill" );
+  auto zone_a = new_location( "zone_a" );
+  auto zone_b = new_location( "zone_b" );
+
+  auto fred = new_agent( "fred", zone_a );
+  auto bill = new_agent( "bill", zone_b );
+  auto sprocket = new_item( "sprocket", fred );
+
+  show( fred );
+  show( bill );
+
+  fred^relocate_to( zone_b );
+
+  show( sprocket );
+
+  show( fred );
+  show( bill );
+
+  sprocket^transfer_to( bill );
+
+  show( fred );
+  show( bill );
 }

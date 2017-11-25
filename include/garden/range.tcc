@@ -810,7 +810,6 @@ namespace garden // TODO searchable concept?
       return in.count( x );
     }
   };
-
   struct find_fn
   : Fn<find_fn>
   {
@@ -829,9 +828,33 @@ namespace garden // TODO searchable concept?
         return {};
     }
   };
+  struct erase_fn
+  : Fn<erase_fn>
+  {
+    let eval
+    (auto x, auto c) -> auto
+    {
+      c.erase( x );
+
+      return c;
+    }
+  };
+  struct insert_fn
+  : Fn<insert_fn>
+  {
+    let eval
+    (auto x, auto c) -> auto
+    {
+      c.insert( x );
+
+      return c;
+    }
+  };
 
   let contains = contains_fn{};
   let find = find_fn{};
+  let erase = erase_fn{};
+  let insert = insert_fn{};
 }
 namespace garden::range
 { // maybe_front
