@@ -1,6 +1,3 @@
-[submodule "submodule/portaudio"]
-	path = submodule/portaudio
-	url = git://git.assembla.com/portaudio.git
 [submodule "submodule/Catch"]
 	path = submodule/Catch
 	url = https://github.com/philsquared/Catch
@@ -10,6 +7,3 @@
 [submodule "submodule/bullet3"]
 	path = submodule/bullet3
 	url = https://github.com/bulletphysics/bullet3
-[submodule "submodule/panda3d"]
-	path = submodule/panda3d
-	url = https://github.com/evenex/panda3d

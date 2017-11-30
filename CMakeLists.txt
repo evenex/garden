@@ -15,15 +15,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
 ################
 # DEPENDENCIES
 ################
+find_package(Boost REQUIRED)
 # INCLUDES
 include_directories(
   include
   ./submodule/Catch/include
   ./submodule/dlib
-  ./submodule/panda3d/built/include
-  ./submodule/portaudio/include
-  /usr/include/python2.7
-  /usr/include/freetype2
 )
 #---------------
 
@@ -57,19 +54,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_DEBUG_FLAGS} ${CXX_17} ${WARNINGS}")
 # LINKER
 ################
 link_directories(
-  ./submodule/panda3d/built/lib
-  ./submodule/portaudio/built
 )
 SET(LIBRARIES 
-  panda
-  pandaexpress
-  p3framework
-  p3dtool
-  p3dtoolconfig
-  python2.7
   pthread
-  freetype
-  portaudio
 )
 #---------------
 
