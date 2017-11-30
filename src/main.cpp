@@ -218,6 +218,9 @@ namespace garden
   let subtract = subtract_fn{};
 }
 
+// TODO using functor::operator%;
+// TODO using monoid::operator+;
+
 namespace game
 {
   class Location;
@@ -394,7 +397,7 @@ namespace game
     static inline auto
     items = database::table<
       Link<Item>
-    >( identity );
+    >( identity, name, owner );
   };
 }
 
@@ -445,18 +448,19 @@ int main(int argc, char** argv)
   auto bill = new_agent( "bill", zone_b );
   auto sprocket = new_item( "sprocket", fred );
 
+  show( sprocket );
   show( fred );
   show( bill );
 
   fred^relocate_to( zone_b );
 
   show( sprocket );
-
   show( fred );
   show( bill );
 
   sprocket^transfer_to( bill );
 
+  show( sprocket );
   show( fred );
   show( bill );
 }
